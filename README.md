@@ -15,8 +15,6 @@ ssh guestbook@whisp.fyi
 ```
 
 <br/>
-<br/>
-<br/>
 
 # Installation
 
@@ -26,7 +24,7 @@ Install the package via composer:
 composer require whispphp/whisp
 ```
 
-<br/><br/>
+<br/>
 
 # Usage
 
