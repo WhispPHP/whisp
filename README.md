@@ -4,13 +4,13 @@
   <img width="200" height="200" src="logo.png"/>
   <br/>
   <a href="https://whispphp.com">View Full Docs</a>
+  <br/>
+  An SSH server written in pure PHP for the best way to build SSH based TUIs.
 </p>
-
-An SSH server written in pure PHP for the best way to build SSH based TUIs.
 
 
 > [!NOTE]
-> Quick example running on Whisp, **sign our guestbook**:
+> Quick example -> **sign our guestbook**:
 > ```bash
 > ssh guestbook@whisp.fyi
 > ```
