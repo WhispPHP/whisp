@@ -5,7 +5,7 @@
   <br/>
   <a href="https://whispphp.com">View Full Docs</a>
   <br/>
-  An SSH server written in pure PHP for the best way to build SSH based TUIs.
+  SSH server built in pure PHP, enabling the best way to build SSH based PHP apps.
 </p>
 
 
