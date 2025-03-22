@@ -1,5 +1,6 @@
 {
     "name": "whispphp/whisp",
+    "description": "Pure PHP SSH server designed for terminal apps",
     "type": "library",
     "license": "MIT",
     "version": "0.0.1",
