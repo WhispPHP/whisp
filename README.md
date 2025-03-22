@@ -9,10 +9,11 @@
 An SSH server written in pure PHP for the best way to build SSH based TUIs.
 
 
-Quick example running on Whisp, **sign our guestbook**:
-```bash
-ssh guestbook@whisp.fyi
-```
+> [!NOTE]
+> Quick example running on Whisp, **sign our guestbook**:
+> ```bash
+> ssh guestbook@whisp.fyi
+> ```
 
 <br/>
 
