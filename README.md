@@ -70,7 +70,7 @@ These are available as an environment variable.
 | WHISP_USERNAME | The username used in the SSH connection | Unavailable when no username passed, or when the username is a valid app |
 
 
-## Setting requested app
+## Clients requesting apps
 There are two ways for clients to request an available app:
 1. **Username method:** `ssh app@server` - we use the 'username' here as the app name if it matches an available app.
     - Much cleaner, but means if you need the username for auth you can't define the app this way
