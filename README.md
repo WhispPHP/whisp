@@ -1,76 +1,80 @@
-# Whisp - Pure PHP SSH Server
-
 <p align="center">
   <img width="80" height="80" src="logo.png"/>
-  <br/>
-  <a href="https://whispphp.com">View Full Docs</a>
-  <br/>
-  SSH server built in pure* PHP - the best way to build SSH based PHP apps.
+  <h3 align="center"><a href="https://whispphp.com">Whisp</a></h3>
+  <h4 align="center">Your pure* PHP SSH server & the best way to build SSH based TUIs</h4>
 </p>
 
 > [!NOTE]
-> Quick examples -> **sign our guestbook** or **play dinosaur run**:
-```bash
-ssh guestbook@whisp.fyi
-```
-```bash
-ssh dinorun@whisp.fyi
-```
+> Quick example **sign our guestbook**
+> ```bash
+> ssh guestbook@whisp.fyi
+> ```
 
-<br/>
+Explore the docs at **[WhispPHP.com »](https://whispphp.com)**
 
 # Installation
-
-Install the package via composer:
 
 ```bash
 composer require whispphp/whisp
 ```
 
-<br/>
 
 # Usage
 
-You 'run' the server with the apps you want to make available.
+Run the server on the port & IP you'd like, with the apps you want to make available.
 
-Each app is ran as its own separate script, so you can test it normally on the CLI too.
 ```php
-<?php
-
-require __DIR__.'/vendor/autoload.php';
-
 use Whisp\Server;
 
 $server = new Server(port: 2222);
 
+// Available apps - each is its own script forked
 $server->run([
     'default' => __DIR__.'/examples/howdy.php',
     'guestbook' => __DIR__.'/examples/guestbook.php',
 ]);
 
-// $server->run(__DIR__.'/examples/howdy.php'); // Pass just one path if you'd like to only support 1 default script
+// $server->run('full-path/howdy.php'); // Pass just one path if you'd like to only support 1 default script
 ```
 
-Test with `ssh localhost -p2222` (to run the default app) or `ssh guestbook@localhost -p2222` or `ssh localhost -p2222 -t guestbook` to run the guestbook app.
+Once running you can test with:
 
+**Default app**
+```bash
+ssh localhost -p2222
+```
 
-// Environment variables from the SSH client are available in the $_ENV or $_SERVER array
-/*
-Whisp also adds: WHISP_APP, WHISP_CLIENT_IP, WHISP_TTY, WHISP_USERNAME
+**Guestbook app**
+```bash
+ssh guestbook@localhost -p2222
+```
+or
+```bash
+ssh localhost -p2222 -t guestbook
+```
 
-## Example server code
+Each connection is forked to its own process and runs independently.
 
-## How to change server's ssh server to a diff. port
+## Environment variables available to each app
+Each app is provided environment variables from the SSH client which are available in the $_ENV or $_SERVER array.
+
+| Variable | Description | Notes |
+|----------|-------------|------|
+| WHISP_APP | The name of the app being requested | |
+| WHISP_CLIENT_IP | The IP address of the connecting client | |
+| WHISP_TTY | The TTY information for the connection | e.g. /dev/ttys06 |
+| WHISP_USERNAME | The username used in the SSH connection | Empty string if not provided |
+
+## How to change existing server's ssh server to a diff. port
 
 ## How to setup systemd so whisp server always running on port 22
 
-Lots of this should be on whisp.fyi docs site tbf
 
 ## Setting requested app
 Two options for loading the correct app:
 1. `ssh app@server` - we use the 'username' here as the app name if it matches an available app.
   - Much cleaner, but means if you need the username for auth you can't define the app this way
-2. `ssh server -t app`
+2. `ssh server -t app` - request an interactive shell (`-t`) with the requested `app`
 
 
 # Future
