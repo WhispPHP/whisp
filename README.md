@@ -2,6 +2,11 @@
   <img width="80" height="80" src="logo.png"/>
   <h3 align="center"><a href="https://whispphp.com">Whisp</a></h3>
   <h4 align="center">Your pure* PHP SSH server & the best way to build SSH based TUIs</h4>
+      <p align="center">
+        <a href="https://github.com/whispphp/whisp/actions"><img alt="GitHub Workflow Status (master)" src="https://img.shields.io/github/actions/workflow/status/whispphp/whisp/tests.yml?branch=main&label=Tests"></a>
+        <a href="https://packagist.org/packages/whispphp/whisp"><img alt="Latest Version" src="https://img.shields.io/packagist/v/whispphp/whisp"></a>
+        <a href="https://packagist.org/packages/whispphp/whisp"><img alt="License" src="https://img.shields.io/packagist/l/whispphp/whisp"></a>
+    </p>
 </p>
 
 > [!NOTE]
