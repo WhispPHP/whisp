@@ -1,0 +1,12 @@
+vendor
+*.log
+.cursorrules
+ssh_host_key
+ssh_host_key.pub
+guestbook.json
+.env
+todo.md
+test-prompts.php
+.DS_Store
+whisp.fyi.php
+composer.lock
