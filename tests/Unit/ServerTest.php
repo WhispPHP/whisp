@@ -71,6 +71,7 @@ test('handles SIGINT interrupt gracefully', function () {
     ['process' => $this->process, 'pid' => $pid] = start_server_and_wait_for_listening($this->serverScript, $this->host, $this->port);
     expect($pid)->toBeRunning();
     posix_kill($pid, SIGINT);
+    proc_terminate($this->process, SIGINT);
     expect($pid)->toNotBeRunning();
 });
 
@@ -78,6 +79,7 @@ test('handles SIGTERM interrupt gracefully', function () {
     ['process' => $this->process, 'pid' => $pid] = start_server_and_wait_for_listening($this->serverScript, $this->host, $this->port);
     expect($pid)->toBeRunning();
     posix_kill($pid, SIGTERM);
+    proc_terminate($this->process, SIGTERM);
     expect($pid)->toNotBeRunning();
 });
 
