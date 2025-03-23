@@ -5,15 +5,17 @@
   <br/>
   <a href="https://whispphp.com">View Full Docs</a>
   <br/>
-  SSH server built in pure PHP, enabling the best way to build SSH based PHP apps.
+  SSH server built in pure* PHP - the best way to build SSH based PHP apps.
 </p>
 
-
 > [!NOTE]
-> Quick example -> **sign our guestbook**:
-> ```bash
-> ssh guestbook@whisp.fyi
-> ```
+> Quick examples -> **sign our guestbook** or **play dinosaur run**:
+```bash
+ssh guestbook@whisp.fyi
+```
+```bash
+ssh dinorun@whisp.fyi
+```
 
 <br/>
 
@@ -72,7 +74,9 @@ Two options for loading the correct app:
 
 
 # Future
+- [ ] Add chacha support so we don't require AES-256 on the server (`sodium_crypto_aead_aes256gcm_is_available`)
 - [ ] Enable hooking into userauth
+- [ ] Simplify WinSize and TerminalInfo
 
 ---
 
