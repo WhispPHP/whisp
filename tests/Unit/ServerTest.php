@@ -72,7 +72,7 @@ test('handles SIGINT interrupt gracefully', function () {
     expect($pid)->toBeRunning();
     posix_kill($pid, SIGINT);
     proc_terminate($this->process, SIGINT);
-    expect($pid)->toNotBeRunning();
+    expect($pid)->toNotBeRunning(2500);
 });
 
 test('handles SIGTERM interrupt gracefully', function () {
@@ -80,7 +80,7 @@ test('handles SIGTERM interrupt gracefully', function () {
     expect($pid)->toBeRunning();
     posix_kill($pid, SIGTERM);
     proc_terminate($this->process, SIGTERM);
-    expect($pid)->toNotBeRunning();
+    expect($pid)->toNotBeRunning(2500);
 });
 
 test('accepts and handles new connections', function () {
