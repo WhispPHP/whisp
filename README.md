@@ -34,6 +34,8 @@ composer require whispphp/whisp
 Run the server on the port & IP you'd like, with the apps you want to make available. Each connection is forked to its own process and runs independently.
 
 ```php
+<?php
+
 use Whisp\Server;
 
 $server = new Server(port: 2222);
