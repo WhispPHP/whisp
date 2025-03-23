@@ -1,7 +1,7 @@
 # Whisp - Pure PHP SSH Server
 
 <p align="center">
-  <img width="200" height="200" src="logo.png"/>
+  <img width="80" height="80" src="logo.png"/>
   <br/>
   <a href="https://whispphp.com">View Full Docs</a>
   <br/>
