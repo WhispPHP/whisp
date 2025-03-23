@@ -5,7 +5,7 @@
 </p>
 
 > [!NOTE]
-> Quick example **sign our guestbook**
+> Quick example: **sign our guestbook**
 > ```bash
 > ssh guestbook@whisp.fyi
 > ```
@@ -18,10 +18,15 @@ Explore the docs at **[WhispPHP.com »](https://whispphp.com)**
 composer require whispphp/whisp
 ```
 
+### Requirements
+- PHP 8.1+
+- FFI module installed and enabled
+- pcntl module
+- libsodium module
 
 # Usage
 
-Run the server on the port & IP you'd like, with the apps you want to make available.
+Run the server on the port & IP you'd like, with the apps you want to make available. Each connection is forked to its own process and runs independently.
 
 ```php
 use Whisp\Server;
@@ -29,7 +34,7 @@ use Whisp\Server;
 $server = new Server(port: 2222);
 
 // Available apps - each is its own script forked
-$server->run([
+$server->run(apps: [
     'default' => __DIR__.'/examples/howdy.php',
     'guestbook' => __DIR__.'/examples/guestbook.php',
 ]);
@@ -48,60 +53,47 @@ ssh localhost -p2222
 ```bash
 ssh guestbook@localhost -p2222
 ```
-or
-```bash
-ssh localhost -p2222 -t guestbook
-```
-
-Each connection is forked to its own process and runs independently.
 
 ## Environment variables available to each app
-Each app is provided environment variables from the SSH client which are available in the $_ENV or $_SERVER array.
+These are available as an environment variable.
 
 | Variable | Description | Notes |
 |----------|-------------|------|
 | WHISP_APP | The name of the app being requested | |
 | WHISP_CLIENT_IP | The IP address of the connecting client | |
-| WHISP_TTY | The TTY information for the connection | e.g. /dev/ttys06 |
-| WHISP_USERNAME | The username used in the SSH connection | Empty string if not provided |
-
-## How to change existing server's ssh server to a diff. port
-
-## How to setup systemd so whisp server always running on port 22
+| WHISP_TTY | The TTY information for the connection | e.g. /dev/ttys072 |
+| WHISP_USERNAME | The username used in the SSH connection | Unavailable when no username passed, or when the username is a valid app |
 
 
 ## Setting requested app
-Two options for loading the correct app:
-1. `ssh app@server` - we use the 'username' here as the app name if it matches an available app.
-  - Much cleaner, but means if you need the username for auth you can't define the app this way
-2. `ssh server -t app` - request an interactive shell (`-t`) with the requested `app`
+There are two ways for clients to request an available app:
+1. **Username method:** `ssh app@server` - we use the 'username' here as the app name if it matches an available app.
+    - Much cleaner, but means if you need the username for auth you can't define the app this way
+2. **Command method:** `ssh server -t app` - request an interactive shell (`-t`) with the requested `app`
 
-
-# Future
-- [ ] Add chacha support so we don't require AES-256 on the server (`sodium_crypto_aead_aes256gcm_is_available`)
-- [ ] Enable hooking into userauth
-- [ ] Simplify WinSize and TerminalInfo
 
 ---
 
 
 # Examples
-**Sign the Whisp Guestbook**
-([See the code](https://github.com/WhispPHP/whisp/blob/main/examples/guestbook.php))
+**Sign the Whisp Guestbook** ∙ ([See the code](https://github.com/WhispPHP/whisp/blob/main/examples/guestbook.php))
 ```bash
 ssh guestbook@whisp.fyi
 ```
 
-**Play the Dinorun game**
-[See the code](https://github.com/WhispPHP/whisp/blob/main/examples/dinorun.php)
+**Play the Dinorun game** ∙ [See the code](https://github.com/WhispPHP/whisp/blob/main/examples/dinorun.php)
 ```bash
 ssh dinorun@whisp.fyi
 ```
 
-**Sunrise/sunset**
-[See the code](https://github.com/WhispPHP/whisp/blob/main/examples/daylight.php)
+**View your sunrise/sunset times** ∙ [See the code](https://github.com/WhispPHP/whisp/blob/main/examples/daylight.php)
 ```bash
 ssh daylight@whisp.fyi
+```
+
+**Howdy World** ∙ [See the code](https://github.com/WhispPHP/whisp/blob/main/examples/howdy.php)
+```bash
+ssh whisp.fyi
 ```
 
 **Find your closest World Heritage Sites**
