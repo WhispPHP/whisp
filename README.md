@@ -60,7 +60,7 @@ ssh guestbook@localhost -p2222
 ```
 
 ## Environment variables available to each app
-These are available as an environment variable.
+These are each available as environment variables.
 
 | Variable | Description | Notes |
 |----------|-------------|------|
