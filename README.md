@@ -10,7 +10,7 @@
 </p>
 
 > [!NOTE]
-> Quick example: **sign our guestbook**
+> Quick example: **sign our guestbook** ([See the code](https://github.com/WhispPHP/whisp/blob/main/examples/guestbook.php))
 > ```bash
 > ssh guestbook@whisp.fyi
 > ```
@@ -81,10 +81,6 @@ There are two ways for clients to request an available app:
 
 
 # Examples
-**Sign the Whisp Guestbook** ∙ ([See the code](https://github.com/WhispPHP/whisp/blob/main/examples/guestbook.php))
-```bash
-ssh guestbook@whisp.fyi
-```
 
 **Play the Dinorun game** ∙ [See the code](https://github.com/WhispPHP/whisp/blob/main/examples/dinorun.php)
 ```bash
@@ -94,11 +90,6 @@ ssh dinorun@whisp.fyi
 **View your sunrise/sunset times** ∙ [See the code](https://github.com/WhispPHP/whisp/blob/main/examples/daylight.php)
 ```bash
 ssh daylight@whisp.fyi
-```
-
-**Howdy World** ∙ [See the code](https://github.com/WhispPHP/whisp/blob/main/examples/howdy.php)
-```bash
-ssh whisp.fyi
 ```
 
 **Find your closest World Heritage Sites**
