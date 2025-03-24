@@ -149,4 +149,4 @@ test('manages multiple connections', function () {
     foreach ($connections as $socket) {
         fclose($socket);
     }
-})->markTestSkipped('Not working on GitHub CI atm, but works wonderfully locally and on test servers');;
+})->markTestSkipped('Not working on GitHub CI atm, but works wonderfully locally and on test servers');
