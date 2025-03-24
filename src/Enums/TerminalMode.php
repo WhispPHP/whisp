@@ -6,8 +6,8 @@ namespace Whisp\Enums;
 
 enum TerminalMode: int
 {
-    // Input modes (0-17)
-    // case VINTR = 0;      // Ctrl+C
+    // Control characters (0-17)
+    case VINTR = 0;      // Ctrl+C (SIGINT)
     case VQUIT = 1;      // Ctrl+\
     case VERASE = 2;     // Backspace
     case VKILL = 3;      // Ctrl+U
@@ -73,7 +73,4 @@ enum TerminalMode: int
     // Terminal speed modes (128-129)
     case TTY_OP_ISPEED = 128;  // Input speed
     case TTY_OP_OSPEED = 129;  // Output speed
-
-    // End of modes marker
-    case TTY_OP_END = 0;
 }
