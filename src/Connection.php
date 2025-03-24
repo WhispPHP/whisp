@@ -9,6 +9,7 @@ use Socket;
 use Whisp\Enums\DisconnectReason;
 use Whisp\Enums\MessageType;
 use Whisp\Enums\TerminalMode;
+use Whisp\Values\Winsize;
 
 class Connection
 {
@@ -29,6 +30,9 @@ class Connection
 
     private string $inputBuffer = '';
 
+    /**
+     * @var Channel[]
+     */
     private array $activeChannels = [];
 
     private bool $authenticationComplete = false;
@@ -192,7 +196,7 @@ class Connection
      * @param  int  $selectTimeoutInMs  Timeout in milliseconds
      * @return bool Whether to continue the main loop
      */
-    private function performStreamSelection(array $read, int $selectTimeoutInMs): bool
+    private function performStreamSelection(array &$read, int $selectTimeoutInMs): bool
     {
         $write = $except = [];
         $result = @stream_select($read, $write, $except, 0, $selectTimeoutInMs * 1000);
@@ -337,7 +341,7 @@ class Connection
             return false;
         }
 
-        $this->logger->debug('Writing packet: '.bin2hex($packet));
+        $this->logger->debug('Writing packet, length: '.strlen($packet));
         $result = @fwrite($this->stream, $packet);
 
         if ($result === false) {
@@ -652,6 +656,8 @@ class Connection
      */
     private function handlePtyRequest(Channel $channel, Packet $packet): bool
     {
+        $this->logger->debug('Handling PTY request');
+
         // Extract terminal parameters
         [$term, $widthChars, $heightRows, $widthPixels, $heightPixels] = $packet->extractFormat('%s%u%u%u%u');
 
@@ -712,6 +718,7 @@ class Connection
         }
 
         try {
+            $this->logger->debug('Storing terminal info in channel');
             // Store terminal info in the channel
             $channel->setTerminalInfo(
                 $term,
@@ -722,17 +729,26 @@ class Connection
                 $modes
             );
 
+            $this->logger->debug('Creating PTY');
             // Create a PTY for this channel if it doesn't exist
             if (! $channel->getPty()) {
-                $this->logger->debug('Creating new PTY for terminal');
-                $channel->createPty();
+                $this->logger->debug('No existing PTY, creating new one');
+                if (! $channel->createPty()) {
+                    $this->logger->error('Failed to create PTY');
+
+                    return false;
+                }
+                $this->logger->debug('PTY created successfully');
             } else {
-                $this->logger->debug('Using existing PTY for terminal');
+                $this->logger->debug('Using existing PTY');
             }
+
+            $this->logger->debug('PTY setup successful');
 
             return true;
         } catch (\Exception $e) {
             $this->logger->error('Failed to handle PTY request: '.$e->getMessage());
+            $this->logger->error('Stack trace: '.$e->getTraceAsString());
 
             return false;
         }
@@ -874,8 +890,6 @@ class Connection
 
     public function writeChannelData(Channel $channel, string $data): void
     {
-        $channelId = $channel->recipientChannel;
-
         $maxChunkSize = $channel->maxPacketSize - 1024; // Leave room for packet overhead
 
         // Split data into chunks if it exceeds max packet size
@@ -886,7 +900,7 @@ class Connection
             $chunk = substr($data, $offset, $maxChunkSize);
             $chunkLength = strlen($chunk);
 
-            $this->writePacked(MessageType::CHANNEL_DATA, [$channelId, $chunk]);
+            $this->writePacked(MessageType::CHANNEL_DATA, [$channel->recipientChannel, $chunk]);
 
             $offset += $chunkLength;
         }
