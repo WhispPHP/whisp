@@ -10,3 +10,4 @@ test-prompts.php
 .DS_Store
 whisp.fyi.php
 composer.lock
+get_termios_constants.c

@@ -212,7 +212,7 @@ class Pty
     /**
      * Set terminal window size
      */
-    public function setWindowSize(Winsize $size): void
+    public function setWindowSize(WinSize $size): void
     {
         if (! $this->ffi) {
             // Fallback to stty if FFI not available
@@ -239,20 +239,20 @@ class Pty
     /**
      * Get terminal window size
      */
-    public function getWindowSize(): Winsize
+    public function getWindowSize(): WinSize
     {
         // Run stty size to get rows/cols
         $output = shell_exec('stty size < '.escapeshellarg($this->slaveName));
         if (! $output) {
-            return new Winsize(24, 80); // Default fallback
+            return new WinSize(24, 80); // Default fallback
         }
 
         $parts = explode(' ', trim($output));
         if (count($parts) !== 2) {
-            return new Winsize(24, 80); // Default fallback
+            return new WinSize(24, 80); // Default fallback
         }
 
-        return new Winsize((int) $parts[0], (int) $parts[1]);
+        return new WinSize((int) $parts[0], (int) $parts[1]);
     }
 
     /**
