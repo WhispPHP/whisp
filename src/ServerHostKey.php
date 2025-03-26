@@ -7,7 +7,7 @@ namespace Whisp;
 /**
  * Manages the server's host key. If this key changes, you'll see SSH connection errors due to 'known_hosts'
  */
-class HostKey
+class ServerHostKey
 {
     private string $privateKey;
 
@@ -15,6 +15,8 @@ class HostKey
 
     public function __construct()
     {
+        // TODO: URGENT: Make this a more permanent place, maybe configurable
+        // When people composer require, this gets stored in vendor/ which will get wiped out super easily, especially with envoyer style deployments
         $privateKeyPath = realpath(__DIR__.'/../').'/ssh_host_key';
         $publicKeyPath = realpath(__DIR__.'/../').'/ssh_host_key.pub';
 

@@ -27,7 +27,7 @@ class Kex
     public function __construct(
         public Packet $packet,
         public KexNegotiator $kexNegotiator,
-        public HostKey $hostKey,
+        public ServerHostKey $serverHostKey,
         ?LoggerInterface $logger = null,
     ) {
         $this->logger = $logger ?? new NullLogger;
@@ -48,8 +48,8 @@ class Kex
         $curve25519Public = sodium_crypto_box_publickey($curveKeyPair);
 
         // Use the persistent host key instead of generating a new one
-        $ed25519Private = $this->hostKey->getPrivateKey();
-        $ed25519Public = $this->hostKey->getPublicKey();
+        $ed25519Private = $this->serverHostKey->getPrivateKey();
+        $ed25519Public = $this->serverHostKey->getPublicKey();
 
         $this->logger->debug('Using host key for key exchange, public key: '.bin2hex($ed25519Public));
 

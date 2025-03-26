@@ -9,7 +9,7 @@ use Socket;
 use Whisp\Enums\DisconnectReason;
 use Whisp\Enums\MessageType;
 use Whisp\Enums\TerminalMode;
-use Whisp\Values\Winsize;
+use Whisp\Values\WinSize;
 
 class Connection
 {
@@ -17,7 +17,7 @@ class Connection
 
     private KexNegotiator $kexNegotiator;
 
-    private HostKey $hostKey;
+    private ServerHostKey $serverHostKey;
 
     private LoggerInterface $logger;
 
@@ -122,13 +122,13 @@ class Connection
         return $this;
     }
 
-    public function hostKey(?HostKey $hostKey = null): self|HostKey
+    public function serverHostKey(?ServerHostKey $serverHostKey = null): self|ServerHostKey
     {
-        if (is_null($hostKey)) {
-            return $this->hostKey;
+        if (is_null($serverHostKey)) {
+            return $this->serverHostKey;
         }
 
-        $this->hostKey = $hostKey;
+        $this->serverHostKey = $serverHostKey;
 
         return $this;
     }
@@ -463,11 +463,11 @@ class Connection
             throw new \Exception('KexNegotiator not initialized');
         }
 
-        if (! isset($this->hostKey)) {
+        if (! isset($this->serverHostKey)) {
             throw new \Exception('Host key not set');
         }
 
-        $kex = new Kex($packet, $this->kexNegotiator, $this->hostKey, $this->logger);
+        $kex = new Kex($packet, $this->kexNegotiator, $this->serverHostKey, $this->logger);
 
         $this->write($kex->response());
         $this->packetHandler->setKex($kex);
@@ -773,7 +773,7 @@ class Connection
         // Update terminal size
         if ($pty = $channel->getPty()) {
             try {
-                $pty->setWindowSize(new Winsize($heightRows, $widthChars, $widthPixels, $heightPixels));
+                $pty->setWindowSize(new WinSize($heightRows, $widthChars, $widthPixels, $heightPixels));
                 $this->logger->debug('Window size updated successfully');
             } catch (\Exception $e) {
                 $this->logger->error('Failed to update window size: '.$e->getMessage());

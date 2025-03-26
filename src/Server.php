@@ -27,14 +27,14 @@ class Server
 
     private array $childProcesses = [];
 
-    private HostKey $hostKey;
+    private ServerHostKey $hostKey;
 
     public function __construct(
         public readonly int $port = 22,
         public readonly string $host = '0.0.0.0'
     ) {
         $this->logger = new NullLogger;
-        $this->hostKey = new HostKey;
+        $this->hostKey = new ServerHostKey;
     }
 
     public function getSocket(): ?Socket
@@ -174,7 +174,7 @@ class Server
                 ->logger($this->logger)
                 ->apps($this->apps)
                 ->connectionId($connectionId)
-                ->hostKey($this->hostKey)
+                ->serverHostKey($this->hostKey)
                 ->handle();
 
             $this->logger->debug("Connection #{$connectionId} handled");

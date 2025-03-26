@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Whisp\Values;
 
-class Winsize
+class WinSize
 {
     public function __construct(
         public readonly int $rows,      // Number of rows (in cells)
