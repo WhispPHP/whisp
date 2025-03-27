@@ -22,6 +22,7 @@
         "php": "^8.2|^8.3|^8.4",
         "ext-pcntl": "*",
         "ext-sodium": "*",
+        "ext-ffi": "*",
         "psr/log": "^3.0",
         "phpseclib/phpseclib": "^3.0"
     },
