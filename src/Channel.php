@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Whisp;
 
 use Psr\Log\LoggerInterface;
-use Whisp\Loggers\FileLogger;
+use Whisp\Loggers\NullLogger;
 use Whisp\Values\TerminalInfo;
 
 class Channel
@@ -22,13 +22,7 @@ class Channel
 
     private bool $outputClosed = false;
 
-    private array $environment = [];
-
     private $process = null; // Process resource
-
-    private $pipes = []; // Process pipes
-
-    private bool $commandRunning = false;
 
     private ?int $childPid = null;
 
@@ -39,7 +33,7 @@ class Channel
         public readonly int $maxPacketSize,
         public readonly string $channelType // "session", "x11", etc.
     ) {
-        $this->logger = new FileLogger(realpath(__DIR__.'/../').'/server.log');
+        $this->logger = new NullLogger();
     }
 
     /**
@@ -84,8 +78,7 @@ class Channel
     {
         try {
             $this->pty = new Pty;
-            [$master, $slave] = $this->pty->open();
-            $slaveName = $this->pty->getSlaveName();
+            $this->pty->open();
 
             if ($this->terminalInfo) {
                 $this->pty->setupTerminal(
@@ -111,9 +104,28 @@ class Channel
     }
 
     /**
+     * Read data from the PTY and forward it to the SSH client
+     * This should be called regularly by the connection's main loop
+     */
+    public function forwardFromPty(): void
+    {
+        if (! $this->pty) {
+            return;
+        }
+
+        // Read and forward immediately
+        $chunk = $this->pty->read(512);
+        if ($chunk === '') {
+            return;
+        }
+
+        $this->connection->writeChannelData($this, $chunk);
+    }
+
+    /**
      * Start a command connected to the PTY
      */
-    public function startCommand(string $command): bool
+    public function startCommand(string $command): int|bool
     {
         if (! $this->pty) {
             $this->logger->debug('No PTY, creating one');
@@ -124,66 +136,49 @@ class Channel
             }
         }
 
-        // Get master/slave streams
-        $master = $this->pty->getMaster();
-        $slave = $this->pty->getSlave();
-        $slaveName = $this->pty->getSlaveName();
-        if (! is_resource($master) || ! is_resource($slave)) {
-            $this->logger->error('Failed to get PTY streams');
-
-            return false;
-        }
-
         // Set environment variables
-        $env = $this->environment;
         if ($this->terminalInfo) {
-            $env['TERM'] = $this->terminalInfo->term;
+            $this->pty->setEnvironmentVariable('TERM', $this->terminalInfo->term);
+            $this->pty->setEnvironmentVariable('PATH', getenv('PATH'));
         }
 
         // Log environment variables for debugging
-        $this->logger->debug('Command environment variables: '.json_encode($env));
-
-        // Set up descriptor spec
-        $descriptorSpec = [
-            0 => ['file', $slaveName, 'r'],  // stdin
-            1 => ['file', $slaveName, 'w'],  // stdout
-            2 => ['file', $slaveName, 'w'],   // stderr
-        ];
+        $this->logger->debug('Command environment variables: '.json_encode($this->pty->getEnvironment()));
 
         $this->logger->debug('Starting command: '.$command);
 
-        // Set up SIGCHLD handler before starting the process
-        pcntl_async_signals(true);
-        pcntl_signal(SIGCHLD, function ($signo, $siginfo) {
-            if (! $siginfo) {
-                return;
-            }
+        // Start the command and store the child PID first
+        $this->childPid = $this->pty->startCommand($command);
+        if ($this->childPid === false) {
+            $this->logger->error('Failed to start command');
 
-            $this->logger->debug('Received SIGCHLD for pid: '.$siginfo['pid']);
-
-            // Check if this signal is for our child process
-            if ($siginfo['pid'] === $this->childPid) {
-                $this->logger->debug('Child process terminated, closing channel');
-                $this->closeChannel();
-            }
-        });
-
-        // Start the process
-        $this->process = proc_open($command, $descriptorSpec, $this->pipes, null, $env);
-
-        if (! is_resource($this->process)) {
             return false;
         }
 
-        $status = proc_get_status($this->process);
-        $this->childPid = $status['pid'];
+        // Now that we have the PID, set up signal handling
+        pcntl_async_signals(true);
+        pcntl_signal(SIGCHLD, function ($signo) {
+            $this->logger->debug("SIGCHLD received for PID {$this->childPid}");
 
-        $this->commandRunning = true;
+            if ($signo === SIGCHLD && $this->childPid !== null) {
+                $status = 0;
+                $pid = pcntl_waitpid($this->childPid, $status, WNOHANG);
+                $this->logger->debug("waitpid returned: pid={$pid}, status={$status}");
 
-        // Make the master non-blocking for reading
-        stream_set_blocking($master, false);
+                if ($pid > 0) {
+                    $this->logger->debug("Child process {$pid} exited with status {$status}");
+                    $this->process = null;
+                    $this->childPid = null;
 
-        return true;
+                    // Close the channel when the command exits
+                    $this->closeChannel();
+                } else {
+                    $this->logger->debug("waitpid returned {$pid} - process not finished yet");
+                }
+            }
+        });
+
+        return $this->childPid;
     }
 
     /**
@@ -199,68 +194,21 @@ class Channel
     }
 
     /**
-     * Read data from the PTY and forward it to the SSH client
-     * This should be called regularly by the connection's main loop
-     */
-    public function forwardFromPty(): void
-    {
-        $master = $this->pty->getMaster();
-        if (! is_resource($master)) {
-            $this->logger->debug('PTY master is no longer a valid resource - closing channel');
-            $this->closeChannel();
-
-            return;
-        }
-
-        // Try to read from the PTY master
-        $data = @fread($master, 8192);
-        if ($data === false) {
-            $this->logger->debug('Failed to read from PTY - closing channel');
-            $this->closeChannel();
-
-            return;
-        }
-
-        // No data to forward from PTY
-        if ($data === '') {
-            return;
-        }
-
-        // Forward the data to the SSH client
-        $this->connection->writeChannelData($this, $data);
-    }
-
-    /**
      * Helper method to close channel and send necessary messages
      */
     private function closeChannel(): void
     {
-        $this->commandRunning = false;
+        $this->logger->debug("Closing channel for PID {$this->childPid}");
 
-        // Try to read/write any remaining data from the PTY before closing
-        if ($this->pty && $this->connection) {
-            $master = $this->pty->getMaster();
-            if (is_resource($master)) {
-                // Give a small window for any final output to arrive
-                usleep(50000);
-
-                // Read in a loop until we get no more data
-                $attempts = 0;
-                while (true && $attempts < 10) {
-                    $data = @fread($master, 8192);
-                    if ($data === false || $data === '') {
-                        break;
-                    }
-                    $this->connection->writeChannelData($this, $data);
-                    $attempts++;
-                }
-                usleep(100000); // Give a small window for any final output to arrive
-            }
+        if ($this->pty) {
+            $this->logger->debug('Stopping command in PTY');
+            $this->pty->stopCommand();
         }
 
         $this->markOutputClosed();
 
         if ($this->connection) {
+            $this->logger->debug('Disconnecting connection');
             $this->connection->disconnect('App finished');
         }
     }
@@ -272,7 +220,7 @@ class Channel
     {
         $this->inputClosed = true;
 
-        if ($this->process && is_resource($this->process) && $this->pty) {
+        if ($this->pty) {
             // Send EOF to the process via the PTY
             $this->pty->write("\x04"); // Ctrl+D (EOF)
         }
@@ -315,6 +263,12 @@ class Channel
      */
     public function stopCommand(): void
     {
+        if ($this->childPid) {
+            $this->logger->debug('Stopping command with PID: '.$this->childPid);
+            posix_kill($this->childPid, SIGTERM);
+            $this->childPid = null;
+        }
+
         if ($this->process && is_resource($this->process)) {
             proc_terminate($this->process, SIGTERM);
             proc_close($this->process);
@@ -352,7 +306,7 @@ class Channel
      */
     public function setEnvironmentVariable(string $name, string $value): void
     {
-        $this->environment[$name] = $value;
+        $this->pty->setEnvironmentVariable($name, $value);
         $this->logger->debug("Set environment variable: {$name}={$value}");
     }
 }
