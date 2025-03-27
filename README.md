@@ -19,6 +19,8 @@ Explore the full docs at **[WhispPHP.com »](https://whispphp.com)**
 
 # Installation
 
+Add with composer, or use our [template project](https://github.com/whispphp/template-project).
+
 ```bash
 composer require whispphp/whisp
 ```
