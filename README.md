@@ -15,7 +15,7 @@
 > ssh guestbook@whisp.fyi
 > ```
 
-Explore the docs at **[WhispPHP.com »](https://whispphp.com)**
+Explore the full docs at **[WhispPHP.com »](https://whispphp.com)**
 
 # Installation
 
@@ -81,6 +81,7 @@ There are two ways for clients to request an available app:
 
 ---
 
+Explore the full docs at **[WhispPHP.com »](https://whispphp.com)**, which also show how to setup Whisp to listen on port 22, start on boot, and restart on failure with systemd.
 
 # Examples
 
