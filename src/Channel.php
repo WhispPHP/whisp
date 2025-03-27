@@ -33,7 +33,7 @@ class Channel
         public readonly int $maxPacketSize,
         public readonly string $channelType // "session", "x11", etc.
     ) {
-        $this->logger = new NullLogger();
+        $this->logger = new NullLogger;
     }
 
     /**

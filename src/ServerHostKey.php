@@ -16,11 +16,11 @@ class ServerHostKey
     public function __construct(private ?string $name = 'whisp', private ?string $baseDir = null)
     {
         // We add the name so we can have multiple servers on the same machine
-        $baseDir = $this->baseDir ?? getenv('HOME') . '/.whisp-' . $this->name . '/';
-        if (!is_dir($baseDir)) {
+        $baseDir = $this->baseDir ?? getenv('HOME').'/.whisp-'.$this->name.'/';
+        if (! is_dir($baseDir)) {
             $created = mkdir($baseDir, 0700, true);
-            if (!$created) {
-                throw new \RuntimeException('Failed to find or create baseDir: ' . $baseDir);
+            if (! $created) {
+                throw new \RuntimeException('Failed to find or create baseDir: '.$baseDir);
             }
         }
 
@@ -28,8 +28,8 @@ class ServerHostKey
             throw new \RuntimeException('No baseDir set to store server\'s SSH host keypair');
         }
 
-        $privateKeyPath = $baseDir . '/ssh_host_key';
-        $publicKeyPath = $baseDir . '/ssh_host_key.pub';
+        $privateKeyPath = $baseDir.'/ssh_host_key';
+        $publicKeyPath = $baseDir.'/ssh_host_key.pub';
 
         if (file_exists($privateKeyPath) && file_exists($publicKeyPath)) {
             $this->privateKey = file_get_contents($privateKeyPath);
@@ -47,7 +47,7 @@ class ServerHostKey
             chmod($publicKeyPath, 0644);
 
             if ($wrotePrivateKey === false || $wrotePublicKey === false) {
-                throw new \RuntimeException('Failed to write server\'s SSH host keypair in ' . $baseDir);
+                throw new \RuntimeException('Failed to write server\'s SSH host keypair in '.$baseDir);
             }
         }
     }
