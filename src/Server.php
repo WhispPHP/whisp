@@ -37,6 +37,13 @@ class Server
         $this->hostKey = new ServerHostKey;
     }
 
+    public function setServerHostKey(ServerHostKey $hostKey): self
+    {
+        $this->hostKey = $hostKey;
+
+        return $this;
+    }
+
     public function getSocket(): ?Socket
     {
         return $this->socket;

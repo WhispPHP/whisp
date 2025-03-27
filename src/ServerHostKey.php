@@ -13,12 +13,23 @@ class ServerHostKey
 
     private string $publicKey;
 
-    public function __construct()
+    public function __construct(private ?string $name = 'whisp', private ?string $baseDir = null)
     {
-        // TODO: URGENT: Make this a more permanent place, maybe configurable
-        // When people composer require, this gets stored in vendor/ which will get wiped out super easily, especially with envoyer style deployments
-        $privateKeyPath = realpath(__DIR__.'/../').'/ssh_host_key';
-        $publicKeyPath = realpath(__DIR__.'/../').'/ssh_host_key.pub';
+        // We add the name so we can have multiple servers on the same machine
+        $baseDir = $this->baseDir ?? getenv('HOME') . '/.whisp-' . $this->name . '/';
+        if (!is_dir($baseDir)) {
+            $created = mkdir($baseDir, 0700, true);
+            if (!$created) {
+                throw new \RuntimeException('Failed to find or create baseDir: ' . $baseDir);
+            }
+        }
+
+        if (empty($baseDir)) {
+            throw new \RuntimeException('No baseDir set to store server\'s SSH host keypair');
+        }
+
+        $privateKeyPath = $baseDir . '/ssh_host_key';
+        $publicKeyPath = $baseDir . '/ssh_host_key.pub';
 
         if (file_exists($privateKeyPath) && file_exists($publicKeyPath)) {
             $this->privateKey = file_get_contents($privateKeyPath);
@@ -30,10 +41,14 @@ class ServerHostKey
             $this->publicKey = sodium_crypto_sign_publickey($keyPair);
 
             // Save key pair
-            file_put_contents($privateKeyPath, $this->privateKey);
-            file_put_contents($publicKeyPath, $this->publicKey);
+            $wrotePrivateKey = file_put_contents($privateKeyPath, $this->privateKey);
+            $wrotePublicKey = file_put_contents($publicKeyPath, $this->publicKey);
             chmod($privateKeyPath, 0600);
             chmod($publicKeyPath, 0644);
+
+            if ($wrotePrivateKey === false || $wrotePublicKey === false) {
+                throw new \RuntimeException('Failed to write server\'s SSH host keypair in ' . $baseDir);
+            }
         }
     }
 
