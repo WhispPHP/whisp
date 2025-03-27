@@ -114,7 +114,7 @@ class Channel
         }
 
         // Read and forward immediately
-        $chunk = $this->pty->read(512);
+        $chunk = $this->pty->read(8192);
         if ($chunk === '') {
             return;
         }
