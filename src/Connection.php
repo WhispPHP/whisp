@@ -245,7 +245,7 @@ class Connection
     {
         $data = @fread($stream, 8192);
         if ($data === false) {
-            $this->logger->error('Error reading from SSH client stream: '.error_get_last()['message']);
+            $this->logger->error('Error reading from SSH client stream: '.error_get_last()['message'] ?? '');
             $this->logger->info("Connection #{$this->connectionId} closed by peer");
             $this->running = false;
         } elseif ($data === '') {

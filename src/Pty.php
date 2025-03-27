@@ -152,7 +152,7 @@ class Pty
             return 0;
         }
 
-        error_log("PTY write: Wrote {$written} bytes");
+        fflush($this->master);
 
         return $written;
     }
@@ -196,6 +196,11 @@ class Pty
     public function getMaster()
     {
         return $this->master;
+    }
+
+    public function getSlave()
+    {
+        return $this->slave;
     }
 
     public function getSlaveName(): string
