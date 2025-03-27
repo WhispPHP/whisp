@@ -10,6 +10,7 @@ use Psr\Log\LogLevel;
 
 class FileLogger extends AbstractLogger
 {
+    /** @var resource */
     private $fp;
 
     public function __construct(private string $logFile)
@@ -20,9 +21,8 @@ class FileLogger extends AbstractLogger
 
     public function log($level, $message, array $context = []): void
     {
-        // Ignore debug for now
         if ($level === LogLevel::DEBUG) {
-            return;
+            // return;
         }
 
         $logMessage = sprintf('%s [%s] %s %s', (new DateTime)->format('Y-m-d H:i:s'), $level, $message, PHP_EOL);
