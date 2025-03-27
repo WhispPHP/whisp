@@ -368,23 +368,104 @@ class Ffi
         if ($result === -1) {
             $errno = $this->getErrno();
             $error = \FFI::string($this->ffi->strerror($errno));
+            error_log("FFI setTermios: Failed to set terminal attributes: {$error} (errno: {$errno})");
             throw new \RuntimeException("Failed to set terminal attributes: {$error} (errno: {$errno})");
+        }
+
+        error_log('FFI setTermios: Successfully set terminal attributes');
+    }
+
+    /**
+     * Set the controlling terminal for the current process
+     */
+    public function setControllingTerminal(int $fd): bool
+    {
+        error_log("FFI setControllingTerminal: Setting controlling terminal for fd {$fd}");
+
+        // Log current process info
+        $pid = getmypid();
+        $pgid = posix_getpgid(0);
+        $sid = posix_getsid(0);
+        error_log("FFI setControllingTerminal: Current process - PID: {$pid}, PGID: {$pgid}, SID: {$sid}");
+
+        // Directly use the existing FFI instance
+        try {
+            $tiocscttyCValue = $this->getConstant('TIOCSCTTY');
+            error_log("FFI setControllingTerminal: Using TIOCSCTTY value: {$tiocscttyCValue}");
+
+            // Call ioctl directly with 0 as the data argument
+            $result = @$this->ffi->ioctl($fd, $tiocscttyCValue, 0);
+
+            if ($result === -1) {
+                $errno = posix_get_last_error();
+                error_log('FFI setControllingTerminal: Failed to set controlling terminal: '.posix_strerror($errno));
+
+                return false;
+            }
+
+            error_log('FFI setControllingTerminal: Successfully set controlling terminal');
+
+            // Verify the controlling terminal was set
+            $ctty = posix_ttyname($fd);
+            error_log("FFI setControllingTerminal: Current controlling terminal: {$ctty}");
+
+            return true;
+        } catch (\Throwable $e) {
+            error_log('FFI setControllingTerminal: Exception: '.$e->getMessage());
+
+            return false;
         }
     }
 
-    public function setRawMode(int $fd): void
+    /**
+     * Set the foreground process group for the terminal
+     */
+    public function setForegroundProcessGroup(int $fd, int $pid): bool
     {
-        $termios = $this->getTermios($fd);
+        error_log("FFI setForegroundProcessGroup: Setting foreground process group for fd {$fd}, pid {$pid}");
 
-        // Turn off canonical mode and echo
-        $termios->c_lflag &= ~($this->constants['ICANON'] | $this->constants['ECHO'] |
-            $this->constants['ECHOE'] | $this->constants['ECHOK'] |
-            $this->constants['ECHONL'] | $this->constants['IEXTEN']);
+        // Get process info
+        $pgrp = posix_getpgid($pid);
+        if ($pgrp === false) {
+            error_log("FFI setForegroundProcessGroup: Failed to get process group for PID {$pid}");
 
-        // Enable ICRNL in input flags to translate CR to NL
-        $termios->c_iflag |= $this->constants['ICRNL'];
+            return false;
+        }
 
-        $this->setTermios($fd, $termios);
+        // If process group is 0, use the PID as the process group
+        if ($pgrp === 0) {
+            error_log("FFI setForegroundProcessGroup: Process group is 0, using PID {$pid}");
+            $pgrp = $pid;
+        }
+
+        error_log("FFI setForegroundProcessGroup: Attempting to set process group {$pgrp}");
+
+        try {
+            $tiocspgrpValue = $this->getConstant('TIOCSPGRP');
+            error_log("FFI setForegroundProcessGroup: Using TIOCSPGRP value: {$tiocspgrpValue}");
+
+            // Create an integer to hold the process group ID and pass by reference
+            $pgrpPtr = $this->ffi->new('int');
+            $pgrpPtr->cdata = $pgrp;
+
+            // Call ioctl with the pgrp data
+            $result = @$this->ffi->ioctl($fd, $tiocspgrpValue, \FFI::addr($pgrpPtr));
+
+            if ($result === -1) {
+                $errno = posix_get_last_error();
+                error_log('FFI setForegroundProcessGroup: Failed to set process group: '.posix_strerror($errno));
+
+                return false;
+            }
+
+            error_log('FFI setForegroundProcessGroup: Successfully set foreground process group');
+
+            return true;
+        } catch (\Throwable $e) {
+            error_log('FFI setForegroundProcessGroup: Exception: '.$e->getMessage());
+
+            return false;
+        }
     }
 
     public function getConstant(string $name): int
@@ -395,5 +476,18 @@ class Ffi
     public function new(string $type)
     {
         return $this->ffi->new($type);
+    }
+
+    /**
+     * Set O_NOCTTY flag on a file descriptor
+     */
+    public function setNoctty(int $fd): void
+    {
+        $flags = $this->getConstant('O_NOCTTY');
+        if ($this->ffi->ioctl($fd, $flags, 0) === -1) {
+            $errno = $this->getErrno();
+            $error = \FFI::string($this->ffi->strerror($errno));
+            throw new \RuntimeException("Failed to set O_NOCTTY flag: {$error}");
+        }
     }
 }
