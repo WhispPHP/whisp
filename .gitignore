@@ -1,4 +1,5 @@
 rsync
+go-crypto
 vendor
 *.log
 .cursorrules
