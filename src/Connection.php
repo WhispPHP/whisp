@@ -54,6 +54,8 @@ class Connection
     /** @var resource */
     private $stream;
 
+    private ?string $sessionId = null;
+
     /**
      * @param  resource  $stream  The stream resource
      */
@@ -391,11 +393,12 @@ class Connection
             try {
                 // First just read the length
                 $packetLength = unpack('N', substr($this->inputBuffer, 0, 4))[1];
-                $this->logger->debug("Packet length: {$packetLength}");
+                $this->logger->debug("Packet length: {$packetLength}, buffer length: " . strlen($this->inputBuffer));
                 $totalNeeded = 4 + $packetLength + ($this->packetHandler->encryptionActive ? 16 : 0); // length + payload + MAC tag if encrypted
 
                 // We probably got bad data that when decrypted is a ridiculous packet size
                 if ($totalNeeded > $this->maxPacketSize) {
+                    $this->logger->error("Protocol error: packet too large ({$totalNeeded} > {$this->maxPacketSize}), bad packet received");
                     $this->disconnect('Protocol error: packet too large, bad packet received');
                     break;
                 }
@@ -407,16 +410,19 @@ class Connection
                 }
 
                 // Try to parse the complete packet
+                $this->logger->debug("Attempting to parse packet, rekey in progress: " .
+                    ($this->packetHandler->rekeyInProgress ? 'yes' : 'no'));
+
                 [$packet, $bytesUsed] = $this->packetHandler->fromData($this->inputBuffer);
 
                 if ($packet === null) {
                     if ($bytesUsed === 0) {
-                        $this->logger->debug('Packet parsing returned null with 0 bytes used');
+                        $this->logger->debug('Packet parsing returned null with 0 bytes used, likely incomplete packet');
                         break;
                     }
 
                     // We were sent bad data. We are just going to disconnect, the client is probably bad/misbehaving
-                    $this->logger->error("Failed to parse packet, bad packet received");
+                    $this->logger->error("Failed to parse packet, bad packet received. Bytes used: {$bytesUsed}");
                     $badPacketCount++;
                     if ($badPacketCount > 3) {
                         $this->disconnect('Protocol error: too many bad packets');
@@ -448,7 +454,14 @@ class Connection
 
     private function handlePacket(Packet $packet)
     {
-        $this->logger->debug("Handling packet: {$packet->type->name}");
+        $this->logger->debug("Handling packet: {$packet->type->name}, packet length: " . strlen($packet->message));
+
+        // Special debug for NEWKEYS which is crucial for rekeying
+        if ($packet->type === MessageType::NEWKEYS) {
+            $this->logger->debug("Received NEWKEYS packet during " .
+                ($this->packetHandler->rekeyInProgress ? "rekey process" : "initial key exchange"));
+        }
+
         match ($packet->type) {
             MessageType::DISCONNECT => $this->handleDisconnect($packet),
             MessageType::KEXINIT => $this->handleKexInit($packet),
@@ -472,8 +485,8 @@ class Connection
 
     private function handleKexInit(Packet $packet)
     {
-        // If we're already in a key exchange, this is a rekey request
-        if ($this->packetHandler->encryptionActive) {
+        // If we've already done an initial key exchange, this is a rekey request
+        if ($this->packetHandler->hasCompletedInitialKeyExchange) {
             $this->logger->debug('Received rekey request from client');
             $this->packetHandler->rekeyInProgress = true;
         }
@@ -487,21 +500,43 @@ class Connection
      * Diffie Hellman key exchange
      * Lots going on here which enables encryption to work, but crosses through a lot of areas
      */
-    private function handleKexDHInit(Packet $packet)
+    private function handleKexDHInit(Packet $packet): void
     {
-        if (! $this->kexNegotiator) {
-            // TODO: Handle this gracefully
+        if (!$this->kexNegotiator) {
             throw new \Exception('KexNegotiator not initialized');
         }
 
-        if (! isset($this->serverHostKey)) {
+        if (!isset($this->serverHostKey)) {
             throw new \Exception('Host key not set');
         }
 
+        // Create the Kex object
         $kex = new Kex($packet, $this->kexNegotiator, $this->serverHostKey, $this->logger);
 
-        $this->write($kex->response());
-        $this->packetHandler->setKex($kex);
+        // CRITICAL: Manage the session ID at the Connection level
+        if ($this->sessionId === null) {
+            // For the very first key exchange, get the session ID from the Kex object
+            // after calling response() which computes it
+            $kexResponse = $kex->response();
+            $this->sessionId = $kex->sessionId;
+            $this->logger->debug('Initial SSH session ID established');
+        } else {
+            // For rekeys, set the session ID on the Kex object before generating the response
+            $kex->sessionId = $this->sessionId;
+            $this->logger->debug('Using existing session ID for rekey');
+            $kexResponse = $kex->response();
+        }
+
+        // Send the response
+        $this->write($kexResponse);
+
+        // If we're rekeying, pass the Kex for key derivation but don't set it yet
+        if ($this->packetHandler->rekeyInProgress) {
+            $this->packetHandler->deriveKeys($kex);
+        } else {
+            // For initial key exchange, set the Kex immediately
+            $this->packetHandler->setKex($kex);
+        }
     }
 
     /**
@@ -509,27 +544,31 @@ class Connection
      * We need to derive keys from the shared secret :exploding_head:
      * Then tell the packet handler to encrypt/decrypt all packets going forward
      */
-    public function handleNewKeys(Packet $packet)
+    public function handleNewKeys(Packet $packet): void
     {
-        if ($this->packetHandler->encryptionActive) {
+        if ($this->packetHandler->hasCompletedInitialKeyExchange) {
+            // Rekey scenario - send NEWKEYS response
+            $this->logger->debug("Rekey in progress - received NEWKEYS from client, sending our NEWKEYS response");
             $this->write(chr(MessageType::NEWKEYS->value));
-            $this->packetHandler->deriveKeys();
+
+            // Switch to new keys (only after both sides have sent NEWKEYS)
+            $this->logger->debug("Switching to new keys after rekey");
+            $this->packetHandler->switchToNewKeys();
+            $this->logger->debug('Completed rekey process');
         } else {
+            // Initial key exchange
+            $this->logger->debug("Initial key exchange - sending NEWKEYS response");
             $this->write(chr(MessageType::NEWKEYS->value));
+
+            $this->logger->debug("Deriving initial encryption keys");
             $this->packetHandler->deriveKeys();
+
+            // Enable encryption and mark initial key exchange as complete
             $this->packetHandler->encryptionActive = true;
+            $this->packetHandler->hasCompletedInitialKeyExchange = true;
+
+            $this->logger->debug('Initial encryption established');
         }
-
-        // If we already have keys, then mark the rekey as in progress, derive new keys and set them as pending
-
-        /*
-        // If this is a rekey, we need to send NEWKEYS back
-        if ($this->packetHandler->rekeyInProgress) {
-            $this->write(chr(MessageType::NEWKEYS->value));
-        }
-
-        // Switch to new keys and reset sequence numbers
-        $this->packetHandler->switchToNewKeys();*/
     }
 
     /**
@@ -974,6 +1013,7 @@ class Connection
 
             return false;
         }
+        $params = [];
 
         if (!array_key_exists($app, $this->apps)) {
             // See if an app exists in $this->apps that would match with its routing params

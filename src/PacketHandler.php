@@ -37,6 +37,7 @@ class PacketHandler
     public int $packetSeq_CStoS = 0;
 
     public Kex $kex;
+    public ?Kex $rekeyKex = null;
 
     private ?AES $encryptor = null;
 
@@ -48,6 +49,7 @@ class PacketHandler
     public bool $rekeyInProgress = false;
 
     private ?array $pendingKeys = null;
+    public bool $hasCompletedInitialKeyExchange = false;
 
     public function __construct(
         public Socket $socket,
@@ -75,19 +77,27 @@ class PacketHandler
         return $this;
     }
 
-    public function deriveKeys()
+    public function deriveKeys(?Kex $kexToUse = null): void
     {
+        // Use provided Kex or fall back to the instance property
+        $kex = $kexToUse ?? $this->kex;
+
+        // Store the rekeying Kex if needed
+        if ($this->rekeyInProgress) {
+            $this->rekeyKex = $kex;
+        }
+
         // Pack shared secret as MPInt (confirm no extra leading zeros)
-        $K = $this->packMpint($this->kex->sharedSecret);
-        $H = $this->kex->exchangeHash;
+        $K = $this->packMpint($kex->sharedSecret);
+        $H = $kex->exchangeHash;
 
         // Modified KDF to support extended hashing if needed
-        $kdf = function (string $letter, int $needed_length) use ($K, $H): string {
+        $kdf = function (string $letter, int $needed_length) use ($K, $H, $kex): string {
             $output = '';
             $prev_block = '';
 
             while (strlen($output) < $needed_length) {
-                $input = $K.$H.($prev_block ? $prev_block : $letter).$this->kex->sessionId;
+                $input = $K.$H.($prev_block ? $prev_block : $letter).$kex->sessionId;
                 $hash = hash('sha256', $input, true);
                 $output .= $hash;
                 $prev_block = $hash;
@@ -99,35 +109,32 @@ class PacketHandler
         // For aes256-gcm@openssh.com:
         // - We need 32-byte keys for AES-256
         // - We need 12-byte IVs for GCM
-        $this->encryptIV_CStoS = $kdf('A', 12);    // Only take 12 bytes for GCM IV
-        $this->encryptKey_CStoS = $kdf('C', 32);   // 32 bytes for AES-256 key
+        $encryptIV_CStoS = $kdf('A', 12);    // Only take 12 bytes for GCM IV
+        $encryptKey_CStoS = $kdf('C', 32);   // 32 bytes for AES-256 key
 
-        $this->encryptIV_StoC = $kdf('B', 12);     // Only take 12 bytes for GCM IV
-        $this->encryptKey_StoC = $kdf('D', 32);    // 32 bytes for AES-256 key
+        $encryptIV_StoC = $kdf('B', 12);     // Only take 12 bytes for GCM IV
+        $encryptKey_StoC = $kdf('D', 32);    // 32 bytes for AES-256 key
 
-        // Debug key derivation
-        $this->logger->debug(sprintf(
-            "Key Derivation:\nIV C->S: %s\nKey C->S: %s\nIV S->C: %s\nKey S->C: %s",
-            bin2hex($this->encryptIV_CStoS),
-            bin2hex($this->encryptKey_CStoS),
-            bin2hex($this->encryptIV_StoC),
-            bin2hex($this->encryptKey_StoC)
-        ));
+        // Store derived keys in appropriate container
+        if ($this->rekeyInProgress) {
+            $this->pendingKeys = [
+                'encryptIV_CStoS' => $encryptIV_CStoS,
+                'encryptKey_CStoS' => $encryptKey_CStoS,
+                'encryptIV_StoC' => $encryptIV_StoC,
+                'encryptKey_StoC' => $encryptKey_StoC
+            ];
+        } else {
+            $this->encryptIV_CStoS = $encryptIV_CStoS;
+            $this->encryptKey_CStoS = $encryptKey_CStoS;
+            $this->encryptIV_StoC = $encryptIV_StoC;
+            $this->encryptKey_StoC = $encryptKey_StoC;
+            // Initialize AES instances with the new keys
+            $this->encryptor = new AES('gcm');
+            $this->encryptor->setKey($this->encryptKey_StoC);
 
-        // Initialize AES instances with GCM mode
-        $this->encryptor = new AES('gcm');
-        $this->encryptor->setKey($this->encryptKey_StoC);
-
-        $this->decryptor = new AES('gcm');
-        $this->decryptor->setKey($this->encryptKey_CStoS);
-
-        // Debug AES configuration
-        $this->logger->debug(sprintf(
-            "AES Configuration:\nMode: %s\nKey size: %d bits\nBlock size: %d bytes",
-            $this->decryptor->getMode(),
-            strlen($this->encryptKey_CStoS) * 8,
-            $this->decryptor->getBlockLength() / 8
-        ));
+            $this->decryptor = new AES('gcm');
+            $this->decryptor->setKey($this->encryptKey_CStoS);
+        }
     }
 
     private function getNonce(string $baseIV, int $sequenceNumber): string
@@ -337,6 +344,7 @@ class PacketHandler
 
         // Set the nonce for this packet
         $nonce = $this->getNonce($this->encryptIV_CStoS, $this->packetSeq_CStoS);
+
         $this->decryptor->setNonce($nonce);
 
         // Set AAD before decryption
@@ -348,10 +356,8 @@ class PacketHandler
             $plaintext = $this->decryptor->decrypt($ciphertext);
         } catch (\Exception $e) {
             $this->logger->error(sprintf(
-                'Decryption failed for packet seq %d:\nKey: %s\nNonce: %s\nError: %s',
+                'Decryption failed for packet seq %d\nError: %s',
                 $this->packetSeq_CStoS,
-                bin2hex($this->encryptKey_CStoS),
-                bin2hex($nonce),
                 $e->getMessage()
             ));
 
@@ -359,13 +365,6 @@ class PacketHandler
         }
 
         if ($plaintext === false) {
-            $this->logger->error(sprintf(
-                'Decryption failed for packet seq %d:\nKey: %s\nNonce: %s',
-                $this->packetSeq_CStoS,
-                bin2hex($this->encryptKey_CStoS),
-                bin2hex($nonce)
-            ));
-
             return false;
         }
 
@@ -390,52 +389,42 @@ class PacketHandler
         return pack('N', strlen($bignum)).$bignum;
     }
 
-    private function initiateRekey(): void
-    {
-        $this->rekeyInProgress = true;
-        $this->logger->debug('Initiating rekey after '.$this->packetSeq_StoC.' packets');
-
-        // Generate new keys
-        $this->deriveKeys();
-
-        // Store the new keys until we receive NEWKEYS
-        $this->pendingKeys = [
-            'encrypt_iv_cstos' => $this->encryptIV_CStoS,
-            'encrypt_key_cstos' => $this->encryptKey_CStoS,
-            'encrypt_iv_stoc' => $this->encryptIV_StoC,
-            'encrypt_key_stoc' => $this->encryptKey_StoC,
-        ];
-
-        // Send KEXINIT to start rekeying
-        // $kexInit = $this->kex->generateKexInit();
-        // $this->constructPacket(MessageType::chr(MessageType::KEXINIT).$kexInit);
-    }
-
     public function switchToNewKeys(): void
     {
-        if (! $this->rekeyInProgress || ! $this->pendingKeys) {
+        if (!$this->rekeyInProgress || !$this->pendingKeys) {
+            $this->logger->error("switchToNewKeys called but no pending keys available");
             return;
         }
 
-        // Switch to the new keys we generated earlier
-        $this->encryptIV_CStoS = $this->pendingKeys['encrypt_iv_cstos'];
-        $this->encryptKey_CStoS = $this->pendingKeys['encrypt_key_cstos'];
-        $this->encryptIV_StoC = $this->pendingKeys['encrypt_iv_stoc'];
-        $this->encryptKey_StoC = $this->pendingKeys['encrypt_key_stoc'];
+        // Apply pending keys
+        $this->encryptIV_CStoS = $this->pendingKeys['encryptIV_CStoS'];
+        $this->encryptKey_CStoS = $this->pendingKeys['encryptKey_CStoS'];
+        $this->encryptIV_StoC = $this->pendingKeys['encryptIV_StoC'];
+        $this->encryptKey_StoC = $this->pendingKeys['encryptKey_StoC'];
 
-        // Reinitialize AES instances with new keys
+        // Create new encryptor/decryptor instances
         $this->encryptor = new AES('gcm');
-        $this->encryptor->setKey($this->encryptKey_StoC);
-
         $this->decryptor = new AES('gcm');
+
+        $this->encryptor->setKey($this->encryptKey_StoC);
         $this->decryptor->setKey($this->encryptKey_CStoS);
+
+        // Apply the new Kex object but ensure it keeps the original session ID
+        if ($this->rekeyKex) {
+            // Double-check that the session ID is properly preserved
+            if (!$this->rekeyKex->sessionId) {
+                $this->rekeyKex->sessionId = $this->kex->sessionId;
+            }
+            $this->kex = $this->rekeyKex;
+            $this->rekeyKex = null;
+        }
+
+        // Reset sequence numbers as per RFC 4253, Section 7.4
+        $this->packetSeq_StoC = 0;
+        $this->packetSeq_CStoS = 0;
 
         // Reset state
         $this->pendingKeys = null;
         $this->rekeyInProgress = false;
-        $this->packetSeq_StoC = 0;
-        $this->packetSeq_CStoS = 0;
-
-        $this->logger->debug('Switched to new keys after rekeying');
     }
 }

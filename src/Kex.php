@@ -51,8 +51,6 @@ class Kex
         $ed25519Private = $this->serverHostKey->getPrivateKey();
         $ed25519Public = $this->serverHostKey->getPublicKey();
 
-        $this->logger->debug('Using host key for key exchange, public key: '.bin2hex($ed25519Public));
-
         // Compute shared secret
         $this->sharedSecret = sodium_crypto_scalarmult($curve25519Private, $clientPublicKey);
 
@@ -79,12 +77,12 @@ class Kex
         $signature = sodium_crypto_sign_detached($exchangeHash, $ed25519Private);
         $signatureBlob = $this->packString('ssh-ed25519').$this->packString($signature);
 
-        $this->logger->debug('Key exchange details:', [
+        $this->logger->debug('Key exchange details:' . print_r([
             'host_key_blob_len' => strlen($hostKeyBlob),
             'host_key_public' => bin2hex($ed25519Public),
             'signature_len' => strlen($signature),
             'exchange_hash' => bin2hex($exchangeHash),
-        ]);
+        ], true));
 
         // Construct KEX_ECDH_REPLY
         $kexReplyPayload =
