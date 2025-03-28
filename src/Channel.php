@@ -263,7 +263,10 @@ class Channel
      */
     public function stopCommand(): void
     {
-        $this->pty->stopCommand();
+        if ($this->pty) {
+            $this->pty->stopCommand();
+        }
+
         if ($this->childPid) {
             $this->logger->debug('Stopping command with PID: '.$this->childPid);
             posix_kill($this->childPid, SIGTERM);
