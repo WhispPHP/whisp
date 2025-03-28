@@ -23,6 +23,7 @@
         "ext-pcntl": "*",
         "ext-sodium": "*",
         "ext-ffi": "*",
+        "ext-mbstring": "*",
         "psr/log": "^3.0",
         "phpseclib/phpseclib": "^3.0"
     },
