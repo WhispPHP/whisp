@@ -140,6 +140,12 @@ class Connection
 
         // Main event loop for this connection
         while ($this->running) {
+            if (!is_resource($this->stream)) {
+                $this->logger->debug('Stream is not a resource, breaking');
+                $this->running = false;
+                break;
+            }
+
             $read = $this->setupStreamSelection();
 
             if (empty($read)) {
@@ -244,15 +250,19 @@ class Connection
     private function handleSshClientData($stream): void
     {
         $data = @fread($stream, 8192);
+        $meta = stream_get_meta_data($stream);
+
         if ($data === false) {
             $this->logger->error('Error reading from SSH client stream: '.error_get_last()['message'] ?? '');
             $this->logger->info("Connection #{$this->connectionId} closed by peer");
             $this->running = false;
         } elseif ($data === '') {
-            // Connection closed
-            // TODO: Find out why this makes the connection close early, this should indicate the stream is problematic and we _should_ close the connection/stop handling data?
-            // $this->logger->info("Connection #{$this->connectionId} closed by peer");
-            // $this->running = false;
+            if ($meta['timed_out']) {
+                $this->logger->debug('Stream timed out, disconnecting');
+                $this->disconnect('Stream timed out');
+            }
+            $this->logger->debug('Data is empty');
+            $this->disconnect('Connection closed');
         } else {
             $this->handleData($data);
         }
@@ -293,6 +303,8 @@ class Connection
         stream_set_blocking($this->stream, false);
         socket_getpeername($socket, $address);
         $this->clientIp($address);
+
+        stream_set_timeout($this->stream, 2);
     }
 
     private function cleanup(): void
@@ -367,14 +379,18 @@ class Connection
             return;
         }
 
+        $this->logger->debug("Received data: ".strlen($data));
+
         // Append incoming data into a buffer
         $this->inputBuffer .= $data;
+        $this->logger->debug("Input buffer: ".strlen($this->inputBuffer));
 
         // Process one complete packet at a time
         while (strlen($this->inputBuffer) >= 4) {
             try {
                 // First just read the length
                 $packetLength = unpack('N', substr($this->inputBuffer, 0, 4))[1];
+                $this->logger->debug("Packet length: {$packetLength}");
                 $totalNeeded = 4 + $packetLength + ($this->packetHandler->encryptionActive ? 16 : 0); // length + payload + MAC tag if encrypted
 
                 // If we don't have the complete packet yet, wait for more data
@@ -857,6 +873,7 @@ class Connection
     private function handleDisconnect(Packet $packet)
     {
         [$reasonCode, $description] = $packet->extractFormat('%u%s');
+        $this->running = false;
         $this->disconnect("Client requested disconnect: {$description} (code: {$reasonCode})");
     }
 
