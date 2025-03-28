@@ -434,6 +434,9 @@ class Connection
             MessageType::CHANNEL_DATA => $this->handleChannelData($packet), // 'I'm sending you some data' (key press in our case usually)
             MessageType::CHANNEL_EOF => $this->handleChannelEof($packet),
             MessageType::CHANNEL_CLOSE => $this->handleChannelClose($packet),
+            MessageType::IGNORE => $this->handleIgnore($packet),
+            MessageType::DEBUG => $this->handleDebug($packet),
+            MessageType::UNIMPLEMENTED => $this->handleUnimplemented($packet),
             default => $this->logger->info('Unsupported packet type: '.$packet->type->name),
         };
 
@@ -443,8 +446,9 @@ class Connection
     private function handleKexInit(Packet $packet)
     {
         // If we're already in a key exchange, this is a rekey request
-        if ($this->packetHandler->rekeyInProgress) {
+        if ($this->packetHandler->encryptionActive) {
             $this->logger->debug('Received rekey request from client');
+            $this->packetHandler->rekeyInProgress = true;
         }
 
         $this->kexNegotiator = new KexNegotiator($packet, $this->clientVersion, $this->serverVersion);
@@ -480,7 +484,6 @@ class Connection
      */
     public function handleNewKeys(Packet $packet)
     {
-        // If encryption is already active, then we are rekeying
         if ($this->packetHandler->encryptionActive) {
             $this->write(chr(MessageType::NEWKEYS->value));
             $this->packetHandler->deriveKeys();
@@ -857,6 +860,24 @@ class Connection
         $this->disconnect("Client requested disconnect: {$description} (code: {$reasonCode})");
     }
 
+    private function handleIgnore(Packet $packet): void
+    {
+        // Just ignore this packet, as per RFC
+        $this->logger->debug('Received IGNORE message');
+    }
+
+    private function handleDebug(Packet $packet): void
+    {
+        [$alwaysDisplay, $message] = $packet->extractFormat('%b%s');
+        $this->logger->debug("Received DEBUG message: $message");
+    }
+
+    private function handleUnimplemented(Packet $packet): void
+    {
+        [$seqNum] = $packet->extractFormat('%u');
+        $this->logger->debug("Received UNIMPLEMENTED for sequence number: $seqNum");
+    }
+
     /**
      * Disconnect the SSH connection with a reason
      */
@@ -925,6 +946,23 @@ class Connection
             return false;
         }
 
+        if (!array_key_exists($app, $this->apps)) {
+            // See if an app exists in $this->apps that would match with its routing params
+            foreach ($this->apps as $baseApp => $command) {
+                // Convert route pattern to regex
+                // cursor-party-{room} -> cursor-party-(?<room>[^/]+)
+                $pattern = preg_replace('/\{([^}]+)\}/', '(?<$1>[^/]+)', $baseApp);
+                $pattern = '/^' . str_replace('/', '\/', $pattern) . '$/';
+
+                if (preg_match($pattern, $app, $matches)) {
+                    // We found a match! Now we can extract the parameters
+                    $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+                    $app = $baseApp; // Use the base app name for command lookup
+                    break;
+                }
+            }
+        }
+
         // Unsupported app, what's going on like?
         if (! array_key_exists($app, $this->apps)) {
             $this->writeChannelData($channel, "\n\033[1;33m⚠️  Warning\033[0m: Unknown app: '{$app}'\n");
@@ -944,16 +982,27 @@ class Connection
         $channel->setEnvironmentVariable('WHISP_APP', $app);
         $channel->setEnvironmentVariable('WHISP_USERNAME', $this->username ?? '');
 
+        // Set any extracted parameters as environment variables
+        foreach ($params as $paramName => $paramValue) {
+            $channel->setEnvironmentVariable('WHISP_PARAM_' . strtoupper($paramName), $paramValue);
+        }
+
         $this->logger->info(sprintf(
-            'Set environment variables for connection #%d: WHISP_CLIENT_IP=%s, WHISP_APP=%s, WHISP_TTY=%s, WHISP_USERNAME=%s',
+            'Set environment variables for connection #%d: WHISP_CLIENT_IP=%s, WHISP_APP=%s, WHISP_TTY=%s, WHISP_USERNAME=%s, params=%s',
             $this->connectionId,
             $this->clientIp,
             $app,
             $channel->getPty()?->getSlaveName() ?? '',
-            $this->username ?? ''
+            $this->username ?? '',
+            json_encode($params)
         ));
 
+        // Get the base command and add any parameters as arguments
         $command = $this->apps[$app];
+        if (!empty($params)) {
+            $command .= ' ' . implode(' ', array_map('escapeshellarg', $params)); // So we won't pass the param name which isn't ideal, but they'll be in order, so that works for now
+        }
+
         $success = $channel->startCommand($command);
         $this->logger->info("Started interactive command: {$command}");
 

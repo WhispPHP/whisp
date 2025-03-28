@@ -46,6 +46,7 @@ $server = new Server(port: 2222);
 $server->run(apps: [
     'default' => __DIR__.'/examples/howdy.php',
     'guestbook' => __DIR__.'/examples/guestbook.php',
+    'chat-{roomName}' => __DIR__.'/chat.php',
 ]);
 
 // $server->run('full-path/howdy.php'); // Pass just one path if you'd like to only support 1 default script
