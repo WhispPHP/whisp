@@ -41,6 +41,8 @@ class Connection
 
     private int $connectionId;
 
+    private int $maxPacketSize = 1024 * 1024; // This gets updated when the client opens a channel
+
     private string $requestedApp = 'default';
 
     private bool $running = true;
@@ -379,12 +381,11 @@ class Connection
             return;
         }
 
-        $this->logger->debug("Received data: ".strlen($data));
 
         // Append incoming data into a buffer
         $this->inputBuffer .= $data;
-        $this->logger->debug("Input buffer: ".strlen($this->inputBuffer));
 
+        $badPacketCount = 0;
         // Process one complete packet at a time
         while (strlen($this->inputBuffer) >= 4) {
             try {
@@ -392,6 +393,12 @@ class Connection
                 $packetLength = unpack('N', substr($this->inputBuffer, 0, 4))[1];
                 $this->logger->debug("Packet length: {$packetLength}");
                 $totalNeeded = 4 + $packetLength + ($this->packetHandler->encryptionActive ? 16 : 0); // length + payload + MAC tag if encrypted
+
+                // We probably got bad data that when decrypted is a ridiculous packet size
+                if ($totalNeeded > $this->maxPacketSize) {
+                    $this->disconnect('Protocol error: packet too large, bad packet received');
+                    break;
+                }
 
                 // If we don't have the complete packet yet, wait for more data
                 if (strlen($this->inputBuffer) < $totalNeeded) {
@@ -407,9 +414,13 @@ class Connection
                         $this->logger->debug('Packet parsing returned null with 0 bytes used');
                         break;
                     }
-                    // Decryption failed - skip this packet
-                    $this->logger->error("Failed to parse packet, skipping {$bytesUsed} bytes");
-                    $this->inputBuffer = substr($this->inputBuffer, $bytesUsed);
+
+                    // We were sent bad data. We are just going to disconnect, the client is probably bad/misbehaving
+                    $this->logger->error("Failed to parse packet, bad packet received");
+                    $badPacketCount++;
+                    if ($badPacketCount > 3) {
+                        $this->disconnect('Protocol error: too many bad packets');
+                    }
 
                     continue;
                 }
@@ -573,6 +584,7 @@ class Connection
     {
         // Format: string (channel type) + 3 uint32s (sender channel, window size, max packet)
         [$channelType, $senderChannel, $initialWindowSize, $maxPacketSize] = $packet->extractFormat('%s%u%u%u');
+        $this->maxPacketSize = $maxPacketSize;
 
         $this->logger->info("Channel open request: type=$channelType, sender=$senderChannel, window=$initialWindowSize, max_packet=$maxPacketSize");
 
