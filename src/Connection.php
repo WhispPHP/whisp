@@ -42,6 +42,10 @@ class Connection
     private int $connectionId;
 
     private int $maxPacketSize = 1024 * 1024; // This gets updated when the client opens a channel
+    private int $disconnectInactivitySeconds = 60; // Disconnect after 60 seconds of no data (from client or PTY)
+
+    public \DateTimeImmutable $connectedAt;
+    public \DateTimeImmutable $lastActivity;
 
     private string $requestedApp = 'default';
 
@@ -61,6 +65,8 @@ class Connection
      */
     public function __construct(Socket $socket)
     {
+        $this->connectedAt = new \DateTimeImmutable();
+        $this->lastActivity = new \DateTimeImmutable();
         $this->socket = $socket;
         $this->logger(new \Whisp\Loggers\NullLogger);
         $this->packetHandler(new PacketHandler($socket, $this->logger));
@@ -166,6 +172,12 @@ class Connection
 
             $this->handleStreamData($read);
             $this->cleanupClosedChannels();
+
+            $inactiveSeconds = $this->lastActivity->diff(new \DateTimeImmutable())->s;
+            if ($inactiveSeconds > $this->disconnectInactivitySeconds) {
+                $this->logger->info("Connection inactive for {$inactiveSeconds} seconds, disconnecting");
+                $this->disconnect('Connection inactive for too long');
+            }
         }
 
         // Clean up
@@ -269,6 +281,7 @@ class Connection
             $this->disconnect('Connection closed');
         } else {
             $this->handleData($data);
+            $this->lastActivity = new \DateTimeImmutable();
         }
     }
 
@@ -282,7 +295,10 @@ class Connection
         foreach ($this->activeChannels as $channel) {
             if ($pty = $channel->getPty()) {
                 if ($stream === $pty->getMaster()) {
-                    $channel->forwardFromPty();
+                    $bytesWritten = $channel->forwardFromPty();
+                    if ($bytesWritten > 0) { // We got data, so we're active
+                        $this->lastActivity = new \DateTimeImmutable();
+                    }
                     break;
                 }
             }
@@ -382,7 +398,6 @@ class Connection
 
             return;
         }
-
 
         // Append incoming data into a buffer
         $this->inputBuffer .= $data;
@@ -977,7 +992,7 @@ class Connection
         $this->writePacked(MessageType::CHANNEL_CLOSE, $channelId);
     }
 
-    public function writeChannelData(Channel $channel, string $data): void
+    public function writeChannelData(Channel $channel, string $data): int
     {
         $maxChunkSize = $channel->maxPacketSize - 1024; // Leave room for packet overhead
 
@@ -993,6 +1008,8 @@ class Connection
 
             $offset += $chunkLength;
         }
+
+        return $totalLength;
     }
 
     /**

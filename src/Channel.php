@@ -106,20 +106,22 @@ class Channel
     /**
      * Read data from the PTY and forward it to the SSH client
      * This should be called regularly by the connection's main loop
+     *
+     * @return int The number of bytes written to the client
      */
-    public function forwardFromPty(): void
+    public function forwardFromPty(): int
     {
         if (! $this->pty) {
-            return;
+            return 0;
         }
 
         // Read and forward immediately
         $chunk = $this->pty->read(8192);
         if ($chunk === '') {
-            return;
+            return 0;
         }
 
-        $this->connection->writeChannelData($this, $chunk);
+        return $this->connection->writeChannelData($this, $chunk);
     }
 
     /**
