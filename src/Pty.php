@@ -111,10 +111,6 @@ class Pty
 
             $this->ffi->unlockPty($this->masterFd);
 
-            // Open slave PTY with O_RDWR|O_NOCTTY like creack/pty
-            error_log('PTY open: Opening slave PTY');
-            error_log("PTY open: Slave name: {$this->slaveName}");
-
             $slave = fopen($this->slaveName, 'r+');
             // Store the resources
             $this->master = $master;
@@ -140,15 +136,11 @@ class Pty
     public function write(string $data): int
     {
         if (! $this->master || ! is_resource($this->master)) {
-            error_log('PTY write: No master PTY available');
-
             return 0;
         }
 
         $written = @fwrite($this->master, $data);
         if ($written === false) {
-            error_log('PTY write: Failed to write data');
-
             return 0;
         }
 
@@ -160,8 +152,6 @@ class Pty
     public function read(int $length = 1024): string
     {
         if (! $this->master || ! is_resource($this->master)) {
-            error_log('PTY read: No master PTY available');
-
             return '';
         }
 
@@ -460,7 +450,6 @@ class Pty
         try {
             $this->ffi->setControllingTerminal($slaveFdNum);
         } catch (\Exception $e) {
-            error_log('PTY startCommand: Failed to set controlling terminal: '.$e->getMessage());
             // We'll try to continue anyway
         }
 
