@@ -146,7 +146,7 @@ class Connection
     public function handle(): void
     {
         $this->logger->info('Handling connection with apps: '.print_r($this->apps, true));
-        $selectTimeoutInMs = 20;
+        $selectTimeoutInMs = 30;
 
         // Main event loop for this connection
         while ($this->running) {
@@ -164,10 +164,17 @@ class Connection
                 break;
             }
 
-            if ($this->performStreamSelection($read, $selectTimeoutInMs) === false) {
+            $continue = $this->performStreamSelection($read, $selectTimeoutInMs);
+            if ($continue === false) {
                 $this->logger->debug('Stream selection failed, breaking');
                 $this->running = false;
                 break;
+            }
+
+            // Try again
+            if ($continue === null) {
+                $this->logger->debug('Stream selection failed, trying again');
+                continue;
             }
 
             $this->handleStreamData($read);
@@ -216,17 +223,25 @@ class Connection
      *
      * @param  array  $read  Array of streams to read from
      * @param  int  $selectTimeoutInMs  Timeout in milliseconds
-     * @return bool Whether to continue the main loop
+     * @return bool|null Whether to continue the main loop, or null if we should try again
      */
-    private function performStreamSelection(array &$read, int $selectTimeoutInMs): bool
+    private function performStreamSelection(array &$read, int $selectTimeoutInMs): bool|null
     {
         $write = $except = [];
         $result = @stream_select($read, $write, $except, 0, $selectTimeoutInMs * 1000);
+        $lastError = ($result === false) ? pcntl_get_last_error() : null;
 
         if ($result === false) {
             // Check if it's just an interrupted system call
-            if (pcntl_get_last_error() === PCNTL_EINTR) {
-                return true; // Continue the loop
+            $this->logger->debug('stream_select result: '.$result.', last error: ' . var_export($lastError, true));
+            if ($lastError === PCNTL_EINTR) {
+                $this->logger->debug('stream_select interrupted EINTR, retrying...');
+                return null; // Try again
+            }
+
+            if ($lastError === PCNTL_ECHILD) {
+                $this->logger->debug('stream_select failed, ECHILD, should happen once on command exiting, and that\'s fine: '.error_get_last()['message']);
+                return null; // Try again
             }
 
             $this->logger->debug('stream_select failed: '.error_get_last()['message']);
@@ -981,15 +996,13 @@ class Connection
     /**
      * Tell the client 'EOF' (end of file), then close the channel
      */
-    private function closeChannel(int $channelId)
+    private function closeChannel(Channel $channel)
     {
-        $this->logger->debug('Closing channel #'.$channelId);
-        $this->writePacked(MessageType::CHANNEL_EOF, $channelId);
+        $this->logger->debug('Closing channel #'.$channel->recipientChannel);
+        $this->writePacked(MessageType::CHANNEL_CLOSE, $channel->recipientChannel);
 
-        // Small delay to allow client to process
-        usleep(100000);
-
-        $this->writePacked(MessageType::CHANNEL_CLOSE, $channelId);
+        $channel->close();
+        unset($this->activeChannels[$channel->recipientChannel]);
     }
 
     public function writeChannelData(Channel $channel, string $data): int
@@ -1054,10 +1067,10 @@ class Connection
             $this->writeChannelData($channel, "\n\033[1;33m⚠️  Warning\033[0m: Unknown app: '{$app}'\n");
             usleep(100000);
 
-            $this->writePacked(MessageType::CHANNEL_FAILURE, $recipientChannel);
+            $this->writePacked(MessageType::CHANNEL_FAILURE, $channel->recipientChannel);
 
             // Close the channel gracefully
-            $this->closeChannel($recipientChannel);
+            $this->closeChannel($channel);
 
             return false;
         }
@@ -1067,10 +1080,11 @@ class Connection
         $channel->setEnvironmentVariable('WHISP_TTY', $channel->getPty()?->getSlaveName() ?? '');
         $channel->setEnvironmentVariable('WHISP_APP', $app);
         $channel->setEnvironmentVariable('WHISP_USERNAME', $this->username ?? '');
+        $channel->setEnvironmentVariable('WHISP_CONNECTION_ID', (string) $this->connectionId);
 
         // Set any extracted parameters as environment variables
         foreach ($params as $paramName => $paramValue) {
-            $channel->setEnvironmentVariable('WHISP_PARAM_' . strtoupper($paramName), $paramValue);
+            $channel->setEnvironmentVariable('WHISP_PARAM_' . strtoupper($paramName), (string) $paramValue);
         }
 
         $this->logger->info(sprintf(
@@ -1099,5 +1113,22 @@ class Connection
         }
 
         return true;
+    }
+
+    /**
+     * Send exit status for a channel
+     *
+     * @param Channel $channel The channel to send status for
+     * @param int $exitCode The exit code to send
+     * @return bool Whether sending the status succeeded
+     */
+    public function sendExitStatus(Channel $channel, int $exitCode)
+    {
+        $this->writePacked(
+            MessageType::CHANNEL_REQUEST,
+            [$channel->recipientChannel, 'exit-status', false, $exitCode]
+        );
+
+        $this->closeChannel($channel);
     }
 }

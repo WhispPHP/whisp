@@ -142,7 +142,6 @@ class Channel
         $this->setEnvironmentVariable('PATH', getenv('PATH'));
         if ($this->terminalInfo) {
             $this->setEnvironmentVariable('TERM', $this->terminalInfo->term);
-            $this->setEnvironmentVariable('PATH', getenv('PATH'));
             $this->setEnvironmentVariable('WHISP_TERM', $this->terminalInfo->term);
             $this->setEnvironmentVariable('WHISP_COLS', (string) $this->terminalInfo->widthChars);
             $this->setEnvironmentVariable('WHISP_ROWS', (string) $this->terminalInfo->heightRows);
@@ -168,21 +167,24 @@ class Channel
         pcntl_signal(SIGCHLD, function ($signo) {
             $this->logger->debug("SIGCHLD received for PID {$this->childPid}");
 
-            if ($signo === SIGCHLD && $this->childPid !== null) {
-                $status = 0;
-                $pid = pcntl_waitpid($this->childPid, $status, WNOHANG);
-                $this->logger->debug("waitpid returned: pid={$pid}, status={$status}");
+            if (is_null($this->childPid)) {
+                return;
+            }
 
-                if ($pid > 0) {
-                    $this->logger->debug("Child process {$pid} exited with status {$status}");
-                    $this->process = null;
-                    $this->childPid = null;
+            $status = 0;
+            $pid = pcntl_waitpid($this->childPid, $status, WNOHANG);
+            if ($pid > 0) {
+                // Extract the actual exit code from the status
+                $exitCode = pcntl_wexitstatus($status);
+                $this->logger->info("Child process {$pid} exited with exit code {$exitCode}");
 
-                    // Close the channel when the command exits
-                    $this->closeChannel();
-                } else {
-                    $this->logger->debug("waitpid returned {$pid} - process not finished yet");
+                // Send the exit status to the client
+                if ($this->connection) {
+                    $this->connection->sendExitStatus($this, $exitCode); // TODO: This should be in Channel, not Connection. Weird back and forth of responsibilities in Connection and Channel!
                 }
+
+                $this->process = null;
+                $this->childPid = null;
             }
         });
 
@@ -199,26 +201,6 @@ class Channel
         }
 
         return $this->pty->write($data);
-    }
-
-    /**
-     * Helper method to close channel and send necessary messages
-     */
-    private function closeChannel(): void
-    {
-        $this->logger->debug("Closing channel for PID {$this->childPid}");
-
-        if ($this->pty) {
-            $this->logger->debug('Stopping command in PTY');
-            $this->pty->stopCommand();
-        }
-
-        $this->markOutputClosed();
-
-        if ($this->connection) {
-            $this->logger->debug('Disconnecting connection');
-            $this->connection->disconnect('App finished');
-        }
     }
 
     /**
@@ -302,6 +284,8 @@ class Channel
             $this->pty->close();
             $this->pty = null;
         }
+
+        $this->markOutputClosed();
     }
 
     /**
