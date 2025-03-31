@@ -75,6 +75,8 @@ These are each available as environment variables.
 | WHISP_USERNAME | The username used in the SSH connection | Unavailable when no username passed, or when the username is a valid app |
 | WHISP_COLS | Requested terminal width in chars | |
 | WHISP_ROWS | Requested terminal height | |
+| WHISP_WIDTH_PX | Requested terminal width in pixels | |
+| WHISP_HEIGHT_PX | Requested terminal height in pixels | |
 
 
 ## Clients requesting apps

@@ -146,6 +146,8 @@ class Channel
             $this->setEnvironmentVariable('WHISP_TERM', $this->terminalInfo->term);
             $this->setEnvironmentVariable('WHISP_COLS', (string) $this->terminalInfo->widthChars);
             $this->setEnvironmentVariable('WHISP_ROWS', (string) $this->terminalInfo->heightRows);
+            $this->setEnvironmentVariable('WHISP_WIDTH_PX', (string) $this->terminalInfo->widthPixels);
+            $this->setEnvironmentVariable('WHISP_HEIGHT_PX', (string) $this->terminalInfo->heightPixels);
         }
 
         // Log environment variables for debugging
