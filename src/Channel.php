@@ -139,6 +139,7 @@ class Channel
         }
 
         // Set environment variables
+        $this->setEnvironmentVariable('PATH', getenv('PATH'));
         if ($this->terminalInfo) {
             $this->setEnvironmentVariable('TERM', $this->terminalInfo->term);
             $this->setEnvironmentVariable('PATH', getenv('PATH'));
