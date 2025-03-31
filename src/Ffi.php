@@ -259,7 +259,6 @@ class Ffi
     public function getSlaveNameFromMaster(int $masterFd): string
     {
         if (PHP_OS === 'Darwin') {
-            error_log('FFI getSlaveNameFromMaster: Using macOS method');
             // macOS: Use TIOCPTYGNAME to get the slave name
             $namebuf = $this->ffi->new('ptsname_t');
             \FFI::memset($namebuf, 0, 128);
@@ -268,28 +267,23 @@ class Ffi
             if ($ret === -1) {
                 $errno = $this->getErrno();
                 $error = \FFI::string($this->ffi->strerror($errno));
-                error_log("FFI getSlaveNameFromMaster: Failed to get slave name: {$error} (errno: {$errno})");
                 throw new \RuntimeException("Failed to get slave name: {$error} (errno: {$errno})");
             }
 
             $name = \FFI::string($namebuf);
-            error_log("FFI getSlaveNameFromMaster: Got slave name: {$name}");
 
             return $name;
         } else {
-            error_log('FFI getSlaveNameFromMaster: Using Linux method');
             // Linux: Use TIOCGPTN to get PTY number
             $ptnbuf = $this->ffi->new('unsigned int');
             $ret = $this->ffi->ioctl($masterFd, $this->getConstant('TIOCGPTN'), \FFI::addr($ptnbuf));
             if ($ret === -1) {
                 $errno = $this->getErrno();
                 $error = \FFI::string($this->ffi->strerror($errno));
-                error_log("FFI getSlaveNameFromMaster: Failed to get PTY number: {$error} (errno: {$errno})");
                 throw new \RuntimeException("Failed to get PTY number: {$error} (errno: {$errno})");
             }
 
             $name = '/dev/pts/'.$ptnbuf->cdata;
-            error_log("FFI getSlaveNameFromMaster: Got slave name: {$name}");
 
             return $name;
         }
@@ -362,17 +356,14 @@ class Ffi
 
     public function setTermios(int $fd, $termios): void
     {
-        error_log("FFI setTermios: Setting terminal attributes for fd {$fd}");
         $result = $this->ffi->tcsetattr($fd, $this->getConstant('TCSANOW'), \FFI::addr($termios));
 
         if ($result === -1) {
             $errno = $this->getErrno();
             $error = \FFI::string($this->ffi->strerror($errno));
-            error_log("FFI setTermios: Failed to set terminal attributes: {$error} (errno: {$errno})");
             throw new \RuntimeException("Failed to set terminal attributes: {$error} (errno: {$errno})");
         }
 
-        error_log('FFI setTermios: Successfully set terminal attributes');
     }
 
     /**
@@ -380,39 +371,25 @@ class Ffi
      */
     public function setControllingTerminal(int $fd): bool
     {
-        error_log("FFI setControllingTerminal: Setting controlling terminal for fd {$fd}");
-
         // Log current process info
         $pid = getmypid();
         $pgid = posix_getpgid(0);
         $sid = posix_getsid(0);
-        error_log("FFI setControllingTerminal: Current process - PID: {$pid}, PGID: {$pgid}, SID: {$sid}");
 
         // Directly use the existing FFI instance
         try {
             $tiocscttyCValue = $this->getConstant('TIOCSCTTY');
-            error_log("FFI setControllingTerminal: Using TIOCSCTTY value: {$tiocscttyCValue}");
 
             // Call ioctl directly with 0 as the data argument
             $result = @$this->ffi->ioctl($fd, $tiocscttyCValue, 0);
 
             if ($result === -1) {
-                $errno = posix_get_last_error();
-                error_log('FFI setControllingTerminal: Failed to set controlling terminal: '.posix_strerror($errno));
-
                 return false;
             }
 
-            error_log('FFI setControllingTerminal: Successfully set controlling terminal');
-
-            // Verify the controlling terminal was set
-            $ctty = posix_ttyname($fd);
-            error_log("FFI setControllingTerminal: Current controlling terminal: {$ctty}");
 
             return true;
         } catch (\Throwable $e) {
-            error_log('FFI setControllingTerminal: Exception: '.$e->getMessage());
-
             return false;
         }
     }
@@ -422,27 +399,19 @@ class Ffi
      */
     public function setForegroundProcessGroup(int $fd, int $pid): bool
     {
-        error_log("FFI setForegroundProcessGroup: Setting foreground process group for fd {$fd}, pid {$pid}");
-
         // Get process info
         $pgrp = posix_getpgid($pid);
         if ($pgrp === false) {
-            error_log("FFI setForegroundProcessGroup: Failed to get process group for PID {$pid}");
-
             return false;
         }
 
         // If process group is 0, use the PID as the process group
         if ($pgrp === 0) {
-            error_log("FFI setForegroundProcessGroup: Process group is 0, using PID {$pid}");
             $pgrp = $pid;
         }
 
-        error_log("FFI setForegroundProcessGroup: Attempting to set process group {$pgrp}");
-
         try {
             $tiocspgrpValue = $this->getConstant('TIOCSPGRP');
-            error_log("FFI setForegroundProcessGroup: Using TIOCSPGRP value: {$tiocspgrpValue}");
 
             // Create an integer to hold the process group ID and pass by reference
             $pgrpPtr = $this->ffi->new('int');
@@ -452,18 +421,12 @@ class Ffi
             $result = @$this->ffi->ioctl($fd, $tiocspgrpValue, \FFI::addr($pgrpPtr));
 
             if ($result === -1) {
-                $errno = posix_get_last_error();
-                error_log('FFI setForegroundProcessGroup: Failed to set process group: '.posix_strerror($errno));
-
                 return false;
             }
 
-            error_log('FFI setForegroundProcessGroup: Successfully set foreground process group');
 
             return true;
         } catch (\Throwable $e) {
-            error_log('FFI setForegroundProcessGroup: Exception: '.$e->getMessage());
-
             return false;
         }
     }
