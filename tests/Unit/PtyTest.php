@@ -57,9 +57,7 @@ test('writes and reads data through PTY', function () {
             try {
                 // Write something to indicate we're ready
                 fwrite($slave, 'READY');
-                error_log('Child process ready');
                 $read = fread($slave, 10); // Read 10 bytes to match HOWDYHOWDY
-                error_log('Child process read: '.$read);
                 if (strlen($read) === 10) {  // Check we got 10 bytes
                     exit(0); // Success
                 }
@@ -79,7 +77,6 @@ test('writes and reads data through PTY', function () {
         $testData = 'HOWDYHOWDY';
         $written = $this->pty->write($testData);
         expect($written)->toBe(strlen($testData));
-        dump('Written: '.$written);
 
         // Wait for child process with timeout check
         $status = 0;
