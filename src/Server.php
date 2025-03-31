@@ -21,8 +21,6 @@ class Server
 
     private ?Socket $socket = null;
 
-    private array $connections = [];
-
     private bool $isRunning = false;
 
     private array $childProcesses = [];
@@ -49,9 +47,9 @@ class Server
         return $this->socket;
     }
 
-    public function getConnections(): array
+    public function getActiveCount(): int
     {
-        return $this->connections;
+        return count($this->childProcesses);
     }
 
     public function isRunning(): bool
