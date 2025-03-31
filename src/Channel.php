@@ -140,8 +140,11 @@ class Channel
 
         // Set environment variables
         if ($this->terminalInfo) {
-            $this->pty->setEnvironmentVariable('TERM', $this->terminalInfo->term);
-            $this->pty->setEnvironmentVariable('PATH', getenv('PATH'));
+            $this->setEnvironmentVariable('TERM', $this->terminalInfo->term);
+            $this->setEnvironmentVariable('PATH', getenv('PATH'));
+            $this->setEnvironmentVariable('WHISP_TERM', $this->terminalInfo->term);
+            $this->setEnvironmentVariable('WHISP_COLS', (string) $this->terminalInfo->widthChars);
+            $this->setEnvironmentVariable('WHISP_ROWS', (string) $this->terminalInfo->heightRows);
         }
 
         // Log environment variables for debugging

@@ -73,6 +73,8 @@ These are each available as environment variables.
 | WHISP_CLIENT_IP | The IP address of the connecting client | |
 | WHISP_TTY | The TTY information for the connection | e.g. /dev/ttys072 |
 | WHISP_USERNAME | The username used in the SSH connection | Unavailable when no username passed, or when the username is a valid app |
+| WHISP_COLS | Requested terminal width in chars | |
+| WHISP_ROWS | Requested terminal height | |
 
 
 ## Clients requesting apps
