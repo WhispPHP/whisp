@@ -289,6 +289,11 @@ class PacketHandler
         return $bool ? chr(1) : chr(0);
     }
 
+    public function packBoolean(bool $bool): string
+    {
+        return $this->packBool($bool);
+    }
+
     public function packNull(mixed $value): string
     {
         return '';
@@ -302,10 +307,10 @@ class PacketHandler
     public function packValues(MessageType $type, array $values = []): string
     {
         $packed = MessageType::chr($type);
-
         foreach ($values as $value) {
             $type = strtolower(gettype($value));
             $packMethod = 'pack'.ucfirst($type);
+
             if (method_exists($this, $packMethod)) {
                 $packed .= $this->$packMethod($value);
             } else {
