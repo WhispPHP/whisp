@@ -27,7 +27,7 @@ composer require whispphp/whisp
 
 ### Requirements
 - PHP 8.2+
-- FFI module installed and enabled (!)
+- FFI module
 - pcntl module
 - libsodium module
 
