@@ -76,10 +76,13 @@ class Server
      */
     public function autoDiscoverApps(): self
     {
-        $autoDiscoverFiles = glob(realpath(__DIR__ . '/../apps').'/[a-z]*.php');
+        // This won't work actually as we're included as a composer package so we'll be in vendor/whispphp/whisp/src/... hmmm..
+        // Is there another way to get the base path of where the main server script that uses this class is running?
+        $baseDir = dirname(realpath($_SERVER['argv'][0]));
+        $autoDiscoverFiles = glob($baseDir.'/apps/[a-z]*.php');
+
         $apps = [];
         // TODO: How do we set the 'default' app? :thinking: Ask users to just create 'default.php' and require another of their apps?
-        // TODO: How do we support 'routing'? Like volt filenames and convert square brackets to curly braces? Volt (or Folio?) does page routing with square brackets like: chat-[blah].php right?
         foreach ($autoDiscoverFiles as $file) {
             $appName = strtolower(basename($file, '.php'));
             $appName = str_replace(['[', ']'], ['{', '}'], $appName);
@@ -103,9 +106,7 @@ class Server
             $apps[$app] = sprintf('%s %s', escapeshellarg(PHP_BINARY), escapeshellarg($path));
         }, array_keys($apps), array_values($apps));
 
-        dump('addApps: '.json_encode($apps));
         $this->apps = array_merge($this->apps, $apps);
-        dump('addApps after merge: '.json_encode($this->apps));
         return $this;
     }
     /**
