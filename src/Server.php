@@ -29,10 +29,14 @@ class Server
 
     public function __construct(
         public readonly int $port = 22,
-        public readonly string $host = '0.0.0.0'
+        public readonly string $host = '0.0.0.0',
+        bool $autoDiscoverApps = true,
     ) {
-        $this->logger = new NullLogger;
-        $this->hostKey = new ServerHostKey;
+        $this->logger = new NullLogger();
+        $this->hostKey = new ServerHostKey();
+        if ($autoDiscoverApps) {
+            $this->autoDiscoverApps();
+        }
     }
 
     public function setServerHostKey(ServerHostKey $hostKey): self
@@ -68,19 +72,52 @@ class Server
     }
 
     /**
+     * Auto discover apps in the apps directory, if they start with a lowercase letter
+     */
+    public function autoDiscoverApps(): self
+    {
+        $autoDiscoverFiles = glob(realpath(__DIR__ . '/../apps').'/[a-z]*.php');
+        $apps = [];
+        // TODO: How do we set the 'default' app? :thinking: Ask users to just create 'default.php' and require another of their apps?
+        // TODO: How do we support 'routing'? Like volt filenames and convert square brackets to curly braces? Volt (or Folio?) does page routing with square brackets like: chat-[blah].php right?
+        foreach ($autoDiscoverFiles as $file) {
+            $appName = strtolower(basename($file, '.php'));
+            $appName = str_replace(['[', ']'], ['{', '}'], $appName);
+            $apps[$appName] = $file;
+        }
+
+        return $this->addApps($apps);
+    }
+
+    /**
+     * Add apps - appends to any existing apps
+     *
+     * @param  string|array<string, string>  $apps  - e.g. ['default' => 'fullPathToScript.php', 'guestbook' => 'guestbook.php']
+     */
+    public function addApps(string|array $apps): self
+    {
+        $apps = is_array($apps) ? $apps : ['default' => $apps];
+
+        // Prepend each 'app' with the PHP binary - we only support PHP scripts for now
+        array_map(function (string $app, string $path) {
+            $apps[$app] = sprintf('%s %s', escapeshellarg(PHP_BINARY), escapeshellarg($path));
+        }, array_keys($apps), array_values($apps));
+
+        dump('addApps: '.json_encode($apps));
+        $this->apps = array_merge($this->apps, $apps);
+        dump('addApps after merge: '.json_encode($this->apps));
+        return $this;
+    }
+    /**
      * Run the server with the provided supported apps
      *
      * @param  string|array<string, string>  $apps  - e.g. ['default' => 'fullPathToScript.php', 'guestbook' => 'guestbook.php']
      */
-    public function run(string|array $apps): void
+    public function run(string|array $apps = []): void
     {
-        $this->apps = is_array($apps) ? $apps : ['default' => $apps];
-
-        // Prepend each 'app' with the PHP binary - we only support PHP scripts for now
-        array_map(function (string $app, string $path) {
-            $this->apps[$app] = sprintf('%s %s', escapeshellarg(PHP_BINARY), escapeshellarg($path));
-        }, array_keys($this->apps), array_values($this->apps));
-
+        if (!empty($apps)) {
+            $this->addApps($apps);
+        }
         $this->start();
     }
 
