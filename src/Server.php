@@ -102,11 +102,13 @@ class Server
         $apps = is_array($apps) ? $apps : ['default' => $apps];
 
         // Prepend each 'app' with the PHP binary - we only support PHP scripts for now
-        array_map(function (string $app, string $path) {
-            $apps[$app] = sprintf('%s %s', escapeshellarg(PHP_BINARY), escapeshellarg($path));
-        }, array_keys($apps), array_values($apps));
+        array_walk($apps, function (&$path, $app) {
+            $path = sprintf('%s %s', escapeshellarg(PHP_BINARY), escapeshellarg($path));
+        });
 
+        // We're adding apps, not replacing them all
         $this->apps = array_merge($this->apps, $apps);
+
         return $this;
     }
     /**
