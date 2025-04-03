@@ -72,6 +72,7 @@ These are each available as environment variables.
 | WHISP_ROWS | Requested terminal height | |
 | WHISP_WIDTH_PX | Requested terminal width in pixels | |
 | WHISP_HEIGHT_PX | Requested terminal height in pixels | |
+| WHISP_PARAM_{name} | Passed only when using app params, i.e. chat-{roomName} | |
 
 
 ## Clients requesting apps
