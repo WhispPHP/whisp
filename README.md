@@ -24,9 +24,7 @@ composer require whispphp/whisp
 
 ### Requirements
 - PHP 8.2+
-- FFI module
-- pcntl module
-- libsodium module
+- FFI, pcntl, and libsodium modules
 
 # Usage
 
@@ -37,16 +35,23 @@ Run the server on the port & IP you'd like, with the apps you want to make avail
 
 use Whisp\Server;
 
+// Setup server port & IP
 $server = new Server(port: 2222);
 
-// Available apps - each is its own script forked
+// Then, add your apps in 1 of 3 ways: auto discovery, array, or string
+
+// Auto-discovery - we'll find all apps in the 'apps' directory and make them available
+$server->run();
+
+// Array
 $server->run(apps: [
-    'default' => __DIR__.'/examples/howdy.php',
-    'guestbook' => __DIR__.'/examples/guestbook.php',
-    'chat-{roomName}' => __DIR__.'/chat.php',
+    'default' => 'full-path/howdy.php',
+    'guestbook' => 'full-path/guestbook.php',
+    'chat-{roomName}' => 'full-path/chat.php',
 ]);
 
-// $server->run('full-path/howdy.php'); // Pass just one path if you'd like to only support 1 default script
+// String - set the default script that's always ran
+$server->run('full-path/howdy.php');
 ```
 
 Once running you can test with:
@@ -88,7 +93,7 @@ There are two ways for clients to request an available app:
 
 Explore the full docs at **[WhispPHP.com »](https://whispphp.com)**, which also show how to setup Whisp to listen on port 22, start on boot, and restart on failure with systemd.
 
-# Examples
+# Live Examples
 
 **Play the Dinorun game** ∙ [See the code](https://github.com/WhispPHP/whisp/blob/main/examples/dinorun.php)
 ```bash
