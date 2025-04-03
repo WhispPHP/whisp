@@ -33,10 +33,8 @@ Run the server on the port & IP you'd like, with the apps you want to make avail
 ```php
 <?php
 
-use Whisp\Server;
-
 // Setup server port & IP
-$server = new Server(port: 2222);
+$server = new Whisp\Server(port: 2222);
 
 // Then, add your apps in 1 of 3 ways: auto discovery, array, or string
 
