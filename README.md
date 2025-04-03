@@ -16,11 +16,15 @@ Explore the full docs at **[WhispPHP.com »](https://whispphp.com)**
 
 # Installation
 
-Add with composer, or use our [template project](https://github.com/whispphp/template-project).
+We recommend using our [template project](https://github.com/whispphp/template-project) to get setup with Whisp & Laravel Prompts.
+
+You can also add Whisp to an existing project with composer.
 
 ```bash
 composer require whispphp/whisp
 ```
+
+Coming soon: [Laravel package](https://github.com/whispphp/whisp-laravel), [Laravel starter kit](https://github.com/whispphp/laravel-starter-kit), and a [Docker image](https://github.com/WhispPHP/docker-image).
 
 ### Requirements
 - PHP 8.2+
