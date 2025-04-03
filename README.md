@@ -4,6 +4,8 @@
   <h4 align="center">Your pure* PHP SSH server ∙ the simplest & best way to build PHP SSH apps</h4>
 </p>
 
+![](terminal-example.gif)
+
 > [!NOTE]
 > Quick example: **sign our guestbook** ([See the code](https://github.com/WhispPHP/whisp/blob/main/examples/guestbook.php))
 > ```bash
