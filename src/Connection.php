@@ -634,11 +634,12 @@ class Connection
     public function handleUserAuthRequest(Packet $packet)
     {
         [$username, $service, $method] = $packet->extractFormat('%s%s%s');
-
-        if (array_key_exists($username, $this->apps)) {
-            $this->requestedApp = $username; // So people can do 'ssh appName@host'
-        } else {
-            $this->username = $username; // There can't be a username if the username was used to set the app
+        try {
+            $this->resolveApp($username);
+            $this->requestedApp = $username; // It's a valid app, so we'll set it as the requested app. We can't set the result of resolveApp here though, as if we use routing we can't get the params later because the app will match perfectly (howdy-{name} not howdy-ashley)
+        } catch (\InvalidArgumentException $e) {
+            // It's not a valid app name, so we will treat it as a username
+            $this->username = $username;
         }
 
         $this->logger->info("Auth request: user=$username, service=$service, method=$method");
@@ -703,15 +704,15 @@ class Connection
                 $this->logger->info("Received exec request for app: {$this->requestedApp}");
 
                 // Start the command interactively
-                $started = $this->startInteractiveCommand($channel, $this->requestedApp, $recipientChannel);
+                $started = $this->startInteractiveCommand($channel, $this->requestedApp);
                 if ($wantReply) {
                     $this->write($started ? $channelSuccessReply : $channelFailureReply);
                 }
                 break;
 
             case 'shell':
-                // For shell requests, start the current requestedApp (which defaults to 'default')
-                $started = $this->startInteractiveCommand($channel, $this->requestedApp, $recipientChannel);
+                // For shell requests, start the current requestedApp (which defaults to 'default' but can be overriden by the username)
+                $started = $this->startInteractiveCommand($channel, $this->requestedApp);
                 if ($wantReply) {
                     $this->write($started ? $channelSuccessReply : $channelFailureReply);
                 }
@@ -1026,16 +1027,48 @@ class Connection
     }
 
     /**
+     *
+     * @return array{string, array<string, string>}
+     */
+    private function resolveApp(string $app): array
+    {
+        $resolved = null;
+        $params = [];
+        foreach ($this->apps as $baseApp => $command) {
+            if ($baseApp === $app) {
+                return [$baseApp, []];
+            }
+
+            // Convert route pattern to regex
+            // cursor-party-{room} -> cursor-party-(?<room>[^/]+)
+            $pattern = preg_replace('/\{([^}]+)\}/', '(?<$1>[^/]+)', $baseApp);
+            $pattern = '/^' . str_replace('/', '\/', $pattern) . '$/';
+
+            if (preg_match($pattern, $app, $matches)) {
+                // We found a match! Now we can extract the parameters
+                $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+                $resolved = $baseApp; // Use the base app name for command lookup
+                break;
+            }
+        }
+
+        if ($resolved === null) {
+            throw new \InvalidArgumentException("Unknown app: {$app}");
+        }
+
+        return [$resolved, $params];
+    }
+
+    /**
      * Start an interactive command.
      * It's critical that the 'app' is verified here. It must be a valid app.
      * Do _not_ trust the $app here. It comes from the client.
      *
      * @param  Channel  $channel  The channel to start the command on
      * @param  string  $app  The app to start
-     * @param  int  $recipientChannel  The channel ID of the recipient
      * @return bool Whether the command was started successfully
      */
-    private function startInteractiveCommand(Channel $channel, string $app, int $recipientChannel): bool
+    private function startInteractiveCommand(Channel $channel, string $app): bool
     {
         if (! $channel->getPty()) {
             $this->logger->error('Cannot start command without PTY - interactive terminal required');
@@ -1045,25 +1078,10 @@ class Connection
         }
         $params = [];
 
-        if (!array_key_exists($app, $this->apps)) {
-            // See if an app exists in $this->apps that would match with its routing params
-            foreach ($this->apps as $baseApp => $command) {
-                // Convert route pattern to regex
-                // cursor-party-{room} -> cursor-party-(?<room>[^/]+)
-                $pattern = preg_replace('/\{([^}]+)\}/', '(?<$1>[^/]+)', $baseApp);
-                $pattern = '/^' . str_replace('/', '\/', $pattern) . '$/';
-
-                if (preg_match($pattern, $app, $matches)) {
-                    // We found a match! Now we can extract the parameters
-                    $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
-                    $app = $baseApp; // Use the base app name for command lookup
-                    break;
-                }
-            }
-        }
-
-        // Unsupported app, what's going on like?
-        if (! array_key_exists($app, $this->apps)) {
+        try {
+            [$app, $params] = $this->resolveApp($app);
+        } catch (\InvalidArgumentException $e) {
+            // Unsupported app, what's going on like?
             $this->writeChannelData($channel, "\n\033[1;33m⚠️  Warning\033[0m: Unknown app: '{$app}'\n");
             usleep(100000);
 
