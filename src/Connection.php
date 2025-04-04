@@ -699,9 +699,18 @@ class Connection
                 break;
 
             case 'exec':
-                // Get the command for the error message
-                [$this->requestedApp] = $packet->extractFormat('%s');
-                $this->logger->info("Received exec request for app: {$this->requestedApp}");
+                // Exec is used to run a command on the server, usually you'd do `ssh server 'tail -f log.log'` say, but of course we only support our registered apps here
+                // We also support 2 ways of setting the app: username & exec
+                // Because some terminals (Warp) try to run a giant script here to setup cool things, we need to have 'username' routing take priority over 'exec', so if we already have a non-default requestedApp, we'll use that, _otherwise_ we'll try to use this
+
+                if ($this->requestedApp !== 'default') {
+                    // We already have a great non-default app so we'll use that
+                    $app = $this->requestedApp;
+                    $this->logger->info("Received exec request, ignoring and using username app: {$app}");
+                } else {
+                    [$this->requestedApp] = $packet->extractFormat('%s');
+                    $this->logger->info("Received exec request with app: {$this->requestedApp}");
+                }
 
                 // Start the command interactively
                 $started = $this->startInteractiveCommand($channel, $this->requestedApp);
