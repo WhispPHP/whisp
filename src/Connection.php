@@ -665,14 +665,11 @@ class Connection
      */
     public function handleUserAuthRequest(Packet $packet)
     {
-        // service = 'ssh-connection', method = one of the above auth methods
-        // If we supported sftp, or rsync, or similar, the service would be different
         [$username, $service, $method] = $packet->extractFormat('%s%s%s');
         try {
             $this->resolveApp($username);
-            $this->requestedApp = $username; // It's a valid app, so we'll set it as the requested app. We can't set the result of resolveApp here though, as if we use routing we can't get the params later because the app will match perfectly (howdy-{name} not howdy-ashley)
+            $this->requestedApp = $username;
         } catch (\InvalidArgumentException $e) {
-            // It's not a valid app name, so we will treat it as a username
             $this->username = $username;
         }
 
@@ -680,16 +677,17 @@ class Connection
 
         // Handle the 'none' authentication method
         if ($method === 'none') {
-            // If this is the first auth attempt, treat it as a query for available methods
             if (is_null($this->lastAuthMethod)) {
                 $this->logger->info('Initial auth request - client querying available methods');
                 $this->lastAuthMethod = $method;
-                // List both 'publickey' and 'none' as available methods, with 'publickey' preferred
-                $this->writePacked(MessageType::USERAUTH_FAILURE, [implode(',', ['publickey', 'none']), false]);
+                // List all supported methods
+                $this->writePacked(MessageType::USERAUTH_FAILURE, [
+                    implode(',', ['publickey', 'keyboard-interactive', 'password', 'none']),
+                    false
+                ]);
                 return;
             }
 
-            // If we get here, the client is explicitly choosing 'none' authentication
             $this->logger->info("Client explicitly chose 'none' auth method after trying: {$this->lastAuthMethod}");
             $this->writePacked(MessageType::USERAUTH_SUCCESS);
             $this->authenticationComplete = true;
@@ -697,6 +695,22 @@ class Connection
         }
         $this->lastAuthMethod = $method;
 
+        // Handle keyboard-interactive auth - accept automatically
+        if ($method === 'keyboard-interactive') {
+            $this->logger->info("Accepting keyboard-interactive auth for user: {$username}");
+            $this->writePacked(MessageType::USERAUTH_SUCCESS);
+            $this->authenticationComplete = true;
+            return;
+        }
+
+        // Handle password auth - accept any password
+        if ($method === 'password') {
+            // Skip reading the password since we're accepting anything
+            $this->logger->info("Accepting password auth for user: {$username}");
+            $this->writePacked(MessageType::USERAUTH_SUCCESS);
+            $this->authenticationComplete = true;
+            return;
+        }
 
         // Authing with public key, we want to add this to our environment variable for apps to use
         // But only once we've verified the signature
