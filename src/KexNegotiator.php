@@ -19,7 +19,9 @@ class KexNegotiator
 
     private array $serverHostKeyAlgorithms = [
         'ssh-ed25519',        // Modern, secure, and efficient
-        // 'rsa-sha2-256',        // Widely supported backup
+        'rsa-sha2-256',       // Only support this one RSA algorithm for now
+        'rsa-sha2-512',    // Will add later once we're sure rsa-sha2-256 works
+        // 'ssh-rsa',         // Legacy, not secure, removed
     ];
 
     private array $encryptionAlgorithms = [
