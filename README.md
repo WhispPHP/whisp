@@ -11,6 +11,7 @@
 > ```bash
 > ssh guestbook@whisp.fyi
 > ```
+> Got a one-time secret to share? `ssh secrets@whisp.fyi`
 
 Explore the full docs at **[WhispPHP.com »](https://whispphp.com)**
 
@@ -98,12 +99,18 @@ Explore the full docs at **[WhispPHP.com »](https://whispphp.com)**, which also
 
 # Live Examples
 
-**Play the Dinorun game** ∙ [See the code](https://github.com/WhispPHP/whisp/blob/main/examples/dinorun.php)
+**Play the Dinorun game** ∙ [See the code](https://github.com/WhispPHP/whisp.fyi/blob/main/apps/dinorun.php)
 ```bash
 ssh dinorun@whisp.fyi
 ```
 
-**View your sunrise/sunset times** ∙ [See the code](https://github.com/WhispPHP/whisp/blob/main/examples/daylight.php)
+**Share one-time secrets**
+Fully encrypted, and fully secure. Only the person with the valid private SSH key can access them.
+```bash
+ssh secrets@whisp.fyi
+```
+
+**View your sunrise/sunset times** ∙ [See the code](https://github.com/WhispPHP/whisp.fyi/blob/main/apps/daylight.php)
 ```bash
 ssh daylight@whisp.fyi
 ```
