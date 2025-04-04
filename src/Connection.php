@@ -1062,7 +1062,11 @@ class Connection
         }
 
         if ($resolved === null) {
-            throw new \InvalidArgumentException("Unknown app: {$app}");
+            if (array_key_exists('default', $this->apps)) {
+                $resolved = 'default'; // Fallback to the default app if no match is found
+            } else {
+                throw new \InvalidArgumentException("Unknown app: {$app} and no default app is registered");
+            }
         }
 
         return [$resolved, $params];
@@ -1091,6 +1095,8 @@ class Connection
             [$app, $params] = $this->resolveApp($app);
         } catch (\InvalidArgumentException $e) {
             // Unsupported app, what's going on like?
+            // Warp passes a 200 line script - so 'resolveApp' will fallback to 'default' if available, so we can just error here, as the resolveApp method will fallback to the default app, if it exists
+            $this->logger->warning(sprintf("Unknown app: %s, falling back to default app", substr($app, 0, 100)));
             $this->writeChannelData($channel, "\n\033[1;33m⚠️  Warning\033[0m: Unknown app: '{$app}'\n");
             usleep(100000);
 
