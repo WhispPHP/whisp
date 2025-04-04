@@ -60,6 +60,12 @@ class Connection
 
     private ?string $sessionId = null;
 
+    private PublicKeyValidator $publicKeyValidator;
+
+    private ?string $authenticatedPublicKey = null;
+
+    private ?string $lastAuthMethod = null;
+
     /**
      * @param  resource  $stream  The stream resource
      */
@@ -68,6 +74,7 @@ class Connection
         $this->connectedAt = new \DateTimeImmutable();
         $this->lastActivity = new \DateTimeImmutable();
         $this->socket = $socket;
+        $this->publicKeyValidator = new PublicKeyValidator(new \Whisp\Loggers\NullLogger);
         $this->logger(new \Whisp\Loggers\NullLogger);
         $this->packetHandler(new PacketHandler($socket, $this->logger));
         $this->createStream($socket);
@@ -80,6 +87,7 @@ class Connection
         }
 
         $this->logger = $logger;
+        $this->publicKeyValidator->setLogger($logger);
 
         if ($setPacketHandler) {
             $this->packetHandler->setLogger($logger);
@@ -613,10 +621,36 @@ class Connection
 
         // Accept the user auth service
         if ($serviceName === 'ssh-userauth') {
+            // Before accepting, send EXT_INFO if supported (RFC 8308)
+            $this->sendExtInfo();
+
             $this->writePacked(MessageType::SERVICE_ACCEPT, 'ssh-userauth');
         }
 
         // Ignore other services for now (not 100% convinced they're needed)
+        $this->authenticationComplete = true;
+    }
+
+    /**
+     * Send SSH_MSG_EXT_INFO according to RFC 8308
+     * This explicitly tells the client which signature algorithms we support for user auth.
+     */
+    private function sendExtInfo(): void
+    {
+        $supportedSigAlgs = [
+            'ssh-ed25519',
+            'rsa-sha2-256',  // RSA + SHA-256 signature algorithm
+            'rsa-sha2-512',  // RSA + SHA-512 signature algorithm
+            'ssh-rsa',       // For compatibility with older clients that don't recognize rsa-sha2-*
+        ];
+
+        $payload = pack('N', 1); // Number of extensions
+        $payload .= $this->packetHandler->packString('server-sig-algs');
+        $payload .= $this->packetHandler->packString(implode(',', $supportedSigAlgs));
+
+        // Send the raw payload with the correct message type byte prepended
+        $this->write(MessageType::chr(MessageType::EXT_INFO) . $payload);
+        $this->logger->info('Sent EXT_INFO with server-sig-algs: ' . implode(',', $supportedSigAlgs));
     }
 
     /**
@@ -627,12 +661,12 @@ class Connection
      * password - Plain password auth
      * keyboard-interactive - Challenge-response
      * hostbased - Host-based authentication
-     * none - Used to query available methods
-     *
-     * TODO: Support different methods
+     * none - Used to query available methods or for no-auth scenarios
      */
     public function handleUserAuthRequest(Packet $packet)
     {
+        // service = 'ssh-connection', method = one of the above auth methods
+        // If we supported sftp, or rsync, or similar, the service would be different
         [$username, $service, $method] = $packet->extractFormat('%s%s%s');
         try {
             $this->resolveApp($username);
@@ -644,9 +678,77 @@ class Connection
 
         $this->logger->info("Auth request: user=$username, service=$service, method=$method");
 
-        // For right now: always send success regardless of credentials
-        // TODO: Add hooks for auth methods
-        $this->writePacked(MessageType::USERAUTH_SUCCESS); // Come on in!
+        // Handle the 'none' authentication method
+        if ($method === 'none') {
+            // If this is the first auth attempt, treat it as a query for available methods
+            if (is_null($this->lastAuthMethod)) {
+                $this->logger->info('Initial auth request - client querying available methods');
+                $this->lastAuthMethod = $method;
+                // List both 'publickey' and 'none' as available methods, with 'publickey' preferred
+                $this->writePacked(MessageType::USERAUTH_FAILURE, [implode(',', ['publickey', 'none']), false]);
+                return;
+            }
+
+            // If we get here, the client is explicitly choosing 'none' authentication
+            $this->logger->info("Client explicitly chose 'none' auth method after trying: {$this->lastAuthMethod}");
+            $this->writePacked(MessageType::USERAUTH_SUCCESS);
+            $this->authenticationComplete = true;
+            return;
+        }
+        $this->lastAuthMethod = $method;
+
+
+        // Authing with public key, we want to add this to our environment variable for apps to use
+        // But only once we've verified the signature
+        if ($method === 'publickey') {
+            $this->logger->info("Received public key auth request");
+
+            // Explicitly parse the publickey request fields according to RFC 4252
+            [$hasSignature] = $packet->extractFormat('%b');
+            [$keyAlgorithmName] = $packet->extractFormat('%s'); // e.g. rsa-sha2-256
+            [$publicKeyBlob] = $packet->extractFormat('%s'); // e.g. ssh-rsa exponent modulus | ssh-ed25519 key (32 bytes) | ecdsa-sha2-nistp256 curve_name key
+
+            $this->logger->info("Parsed pk auth request: hasSig=".($hasSignature?'1':'0').", keyAlgo='{$keyAlgorithmName}'");
+
+            if ($hasSignature) {
+                $this->logger->info("Request has signature, extracting signature blob");
+                [$signatureBlob] = $packet->extractFormat('%s');
+
+                // Validate the signature
+                $isValid = $this->publicKeyValidator->validateSignature(
+                    keyAlgorithm: $keyAlgorithmName, // Pass the actual key algorithm type
+                    keyBlob: $publicKeyBlob,    // Pass the key data blob
+                    signatureBlob: $signatureBlob,    // Pass the full signature blob (validator will parse)
+                    sessionId: $this->sessionId,
+                    username: $username,
+                    service: $service
+                );
+                $isValidString = $isValid ? 'true' : 'false';
+                $this->logger->info("Signature validation result: {$isValidString}");
+
+                // They offered a public key, and they successfully validated they have the private key
+                if ($isValid) {
+                    $this->logger->info("Public key signature validated successfully for user: {$username}");
+                    $this->authenticatedPublicKey = $this->publicKeyValidator->getSshKeyFromBlob($publicKeyBlob); // Store the validated key blob
+                    $this->writePacked(MessageType::USERAUTH_SUCCESS);
+                    $this->authenticationComplete = true;
+                    return;
+                }
+
+                $this->logger->warning("Public key signature validation failed for user: {$username}");
+                $this->writePacked(MessageType::USERAUTH_FAILURE, [['publickey', 'none'], false]);
+                return;
+            } else {
+                // Client is checking if the key is acceptable (no signature provided yet)
+                $this->logger->info("Public key provided without signature, sending PK_OK for user: {$username}");
+                $this->writePacked(MessageType::USERAUTH_PK_OK, [$keyAlgorithmName, $publicKeyBlob]);
+                return;
+            }
+        }
+
+        // If we reached here, let them through without key authentication
+        $this->logger->info("Allowing access without key authentication");
+        $this->writePacked(MessageType::USERAUTH_SUCCESS);
         $this->authenticationComplete = true;
     }
 
@@ -1114,6 +1216,11 @@ class Connection
         $channel->setEnvironmentVariable('WHISP_APP', $app);
         $channel->setEnvironmentVariable('WHISP_USERNAME', $this->username ?? '');
         $channel->setEnvironmentVariable('WHISP_CONNECTION_ID', (string) $this->connectionId);
+
+        // Set the validated public key if available
+        if ($this->authenticatedPublicKey !== null) {
+            $channel->setEnvironmentVariable('WHISP_USER_PUBLIC_KEY', $this->authenticatedPublicKey);
+        }
 
         // Set any extracted parameters as environment variables
         foreach ($params as $paramName => $paramValue) {

@@ -39,11 +39,11 @@ enum MessageType: int
 
     case USERAUTH_BANNER = 53;
 
-    case USERAUTH_INFO_REQUEST = 60;
+    // case USERAUTH_INFO_REQUEST = 60; // same number as USERAUTH_PK_OK but different context (RFC 4252)
 
     case USERAUTH_INFO_RESPONSE = 61;
 
-    // case USERAUTH_PK_OK = 60; // same number as INFO_REQUEST but different context
+    case USERAUTH_PK_OK = 60;
 
     // Connection Protocol Messages
     case GLOBAL_REQUEST = 80;
