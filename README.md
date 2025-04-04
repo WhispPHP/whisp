@@ -7,7 +7,7 @@
 ![](terminal-example.gif)
 
 > [!NOTE]
-> Quick example: **sign our guestbook** ([See the code](https://github.com/WhispPHP/whisp/blob/main/examples/guestbook.php))
+> Quick example: **sign our guestbook** ([See the code](https://github.com/WhispPHP/whisp.fyi/tree/main/apps))
 > ```bash
 > ssh guestbook@whisp.fyi
 > ```
@@ -75,6 +75,7 @@ These are each available as environment variables.
 |----------|-------------|------|
 | WHISP_APP | The name of the app being requested | |
 | WHISP_CLIENT_IP | The IP address of the connecting client | |
+| WHISP_USER_PUBLIC_KEY | Validated public key of the connecting user | This has been checked against their private key and can be trusted |
 | WHISP_TTY | The TTY information for the connection | e.g. /dev/ttys072 |
 | WHISP_USERNAME | The username used in the SSH connection | Unavailable when no username passed, or when the username is a valid app |
 | WHISP_COLS | Requested terminal width in chars | |
