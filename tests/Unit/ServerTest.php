@@ -97,7 +97,7 @@ test('accepts and handles new connections', function () {
 
     while (microtime(true) - $startTime < 0.2) { // 200ms timeout
         $line = fgets($this->pipes[1]); // Read from stdout
-        if ($line && strpos($line, 'Connection #') !== false) {
+        if ($line && strpos($line, '#1 Connection accepted from') !== false) {
             $connectionAccepted = true;
             break;
         }
