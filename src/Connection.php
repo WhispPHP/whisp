@@ -99,6 +99,12 @@ class Connection
         return $this;
     }
 
+    public function log($level, string|\Stringable $message, array $context = []): void
+    {
+        $messagePrepend = strtoupper(sprintf('[%s #%d]', str_replace('Whisp\\', '', $this::class), $this->connectionId));
+        $this->logger->log($level, $messagePrepend.' '.$message, $context);
+    }
+
     public function packetHandler(?PacketHandler $packetHandler = null): self|PacketHandler
     {
         if (is_null($packetHandler)) {
