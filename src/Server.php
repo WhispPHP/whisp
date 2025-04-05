@@ -28,7 +28,7 @@ class Server
     private ServerHostKey $hostKey;
     private int $memoryUsage = 0;
     private int $peakMemoryUsage = 0;
-    private int $memoryLogInterval = 30;
+    public int $memoryLogInterval = 180;
     private \DateTime $lastMemoryLog;
 
     public function __construct(
