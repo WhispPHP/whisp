@@ -26,6 +26,10 @@ class Server
     private array $childProcesses = [];
 
     private ServerHostKey $hostKey;
+    private int $memoryUsage = 0;
+    private int $peakMemoryUsage = 0;
+    private int $memoryLogInterval = 30;
+    private \DateTime $lastMemoryLog;
 
     public function __construct(
         public readonly int $port = 22,
@@ -37,6 +41,7 @@ class Server
         if ($autoDiscoverApps) {
             $this->autoDiscoverApps();
         }
+        $this->logMemoryUsage();
     }
 
     public function setServerHostKey(ServerHostKey $hostKey): self
@@ -183,24 +188,29 @@ class Server
 
                 $this->forkNewConnection($clientSocket, $connectionId);
             }
+
+            $secondsSinceLastMemoryLog = $this->lastMemoryLog->diff(new \DateTime)->format('%s');
+            if ($secondsSinceLastMemoryLog > $this->memoryLogInterval) {
+                $this->logMemoryUsage();
+            }
         }
     }
 
     private function forkNewConnection(Socket $clientSocket, int $connectionId): void
     {
         socket_getpeername($clientSocket, $address, $port);
-        $this->info("Connection #{$connectionId} accepted from {$address}:{$port}");
+        $this->info("#{$connectionId} Connection accepted from {$address}:{$port}");
 
         $pid = pcntl_fork();
         if ($pid == -1) {
-            $this->error("Failed to fork for connection #$connectionId");
+            $this->error("#{$connectionId} Failed to fork for connection #$connectionId");
             socket_close($clientSocket);
 
             return;
         }
 
         if ($pid == 0) {
-            $this->debug("Child process {$pid} created for connection #{$connectionId}");
+            $this->debug("#{$connectionId} Child process {$pid} created for connection #{$connectionId}");
 
             // Child process - reset signal handlers
             pcntl_signal(SIGINT, SIG_DFL);
@@ -216,12 +226,13 @@ class Server
                 ->serverHostKey($this->hostKey)
                 ->handle();
 
-            $this->debug("Connection #{$connectionId} handled");
+            $this->debug("#{$connectionId} Connection #{$connectionId} handled");
             exit(0); // Exit child process when done
         } else {
             // Parent process
             socket_close($clientSocket); // Close client socket in parent
             $this->childProcesses[$pid] = $connectionId;
+            $this->debug("#{$connectionId} Added child process {$pid} to childProcesses");
         }
     }
 
@@ -316,5 +327,17 @@ class Server
     {
         $this->error($text);
         exit($exitCode);
+    }
+
+    private function logMemoryUsage(): void
+    {
+        $this->lastMemoryLog = new \DateTime;
+        $this->memoryUsage = memory_get_usage(true); // true = get real size
+        $this->peakMemoryUsage = memory_get_peak_usage(true);
+
+        $memoryUsageMB = round($this->memoryUsage / 1024 / 1024, 2);
+        $peakMemoryMB = round($this->peakMemoryUsage / 1024 / 1024, 2);
+
+        $this->info("Memory usage: {$memoryUsageMB}MB (peak: {$peakMemoryMB}MB)");
     }
 }
