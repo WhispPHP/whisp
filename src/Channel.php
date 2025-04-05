@@ -4,19 +4,19 @@ declare(strict_types=1);
 
 namespace Whisp;
 
-use Psr\Log\LoggerInterface;
+use Whisp\Concerns\WritesLogs;
 use Whisp\Loggers\NullLogger;
 use Whisp\Values\TerminalInfo;
 
 class Channel
 {
+    use WritesLogs;
+
     private ?TerminalInfo $terminalInfo = null;
 
     private ?Pty $pty = null;
 
     private ?Connection $connection = null;
-
-    private LoggerInterface $logger;
 
     private bool $inputClosed = false;
 
@@ -33,7 +33,7 @@ class Channel
         public readonly int $maxPacketSize,
         public readonly string $channelType // "session", "x11", etc.
     ) {
-        $this->logger = new NullLogger;
+        $this->setLogger(new NullLogger);
     }
 
     /**
@@ -78,7 +78,9 @@ class Channel
     {
         try {
             $this->pty = new Pty;
-            $this->pty->open();
+            $this->pty
+                ->setLogger($this->logger)
+                ->open();
 
             if ($this->terminalInfo) {
                 $this->pty->setupTerminal(
@@ -130,9 +132,9 @@ class Channel
     public function startCommand(string $command): int|bool
     {
         if (! $this->pty) {
-            $this->logger->debug('No PTY, creating one');
+            $this->debug('No PTY, creating one');
             if (! $this->createPty()) {
-                $this->logger->error('Failed to create PTY');
+                $this->error('Failed to create PTY');
 
                 return false;
             }
@@ -150,14 +152,14 @@ class Channel
         }
 
         // Log environment variables for debugging
-        $this->logger->debug('Command environment variables: '.json_encode($this->pty->getEnvironment()));
+        $this->debug('Command environment variables: '.json_encode($this->pty->getEnvironment()));
 
-        $this->logger->debug('Starting command: '.$command);
+        $this->debug('Starting command: '.$command);
 
         // Start the command and store the child PID first
         $this->childPid = $this->pty->startCommand($command);
         if ($this->childPid === false) {
-            $this->logger->error('Failed to start command');
+            $this->error('Failed to start command');
 
             return false;
         }
@@ -165,7 +167,7 @@ class Channel
         // Now that we have the PID, set up signal handling
         pcntl_async_signals(true);
         pcntl_signal(SIGCHLD, function ($signo) {
-            $this->logger->debug("SIGCHLD received for PID {$this->childPid}");
+            $this->debug("SIGCHLD received for PID {$this->childPid}");
 
             if (is_null($this->childPid)) {
                 return;
@@ -176,7 +178,7 @@ class Channel
             if ($pid > 0) {
                 // Extract the actual exit code from the status
                 $exitCode = pcntl_wexitstatus($status);
-                $this->logger->info("Child process {$pid} exited with exit code {$exitCode}");
+                $this->info("Child process {$pid} exited with exit code {$exitCode}");
 
                 // Send the exit status to the client
                 if ($this->connection) {
@@ -258,12 +260,13 @@ class Channel
         }
 
         if ($this->childPid) {
-            $this->logger->debug('Stopping command with PID: '.$this->childPid);
+            $this->debug('Stopping command with PID: '.$this->childPid);
             posix_kill($this->childPid, SIGTERM);
             $this->childPid = null;
         }
 
         if ($this->process && is_resource($this->process)) {
+            $this->debug('Stopping command with PID: '.$this->childPid);
             proc_terminate($this->process, SIGTERM);
             proc_close($this->process);
         }
@@ -302,6 +305,6 @@ class Channel
     public function setEnvironmentVariable(string $name, string $value): void
     {
         $this->pty->setEnvironmentVariable($name, $value);
-        $this->logger->debug("Set environment variable: {$name}={$value}");
+        $this->debug("Set environment variable: {$name}={$value}");
     }
 }

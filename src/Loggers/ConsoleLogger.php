@@ -51,6 +51,6 @@ class ConsoleLogger implements LoggerInterface
 
     public function log($level, Stringable|string $message, array $context = []): void
     {
-        echo "[" . date('H:i:s') . "] $level: $message\n";
+        echo '['.date('H:i:s')."] $level: $message\n";
     }
 }

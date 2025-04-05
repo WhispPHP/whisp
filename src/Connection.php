@@ -6,6 +6,7 @@ namespace Whisp;
 
 use Psr\Log\LoggerInterface;
 use Socket;
+use Whisp\Concerns\WritesLogs;
 use Whisp\Enums\DisconnectReason;
 use Whisp\Enums\MessageType;
 use Whisp\Enums\TerminalMode;
@@ -13,13 +14,13 @@ use Whisp\Values\WinSize;
 
 class Connection
 {
+    use WritesLogs;
+
     private Socket $socket;
 
     private KexNegotiator $kexNegotiator;
 
     private ServerHostKey $serverHostKey;
-
-    private LoggerInterface $logger;
 
     private PacketHandler $packetHandler;
 
@@ -42,9 +43,11 @@ class Connection
     private int $connectionId;
 
     private int $maxPacketSize = 1024 * 1024; // This gets updated when the client opens a channel
+
     private int $disconnectInactivitySeconds = 60; // Disconnect after 60 seconds of no data (from client or PTY)
 
     public \DateTimeImmutable $connectedAt;
+
     public \DateTimeImmutable $lastActivity;
 
     private string $requestedApp = 'default';
@@ -71,8 +74,8 @@ class Connection
      */
     public function __construct(Socket $socket)
     {
-        $this->connectedAt = new \DateTimeImmutable();
-        $this->lastActivity = new \DateTimeImmutable();
+        $this->connectedAt = new \DateTimeImmutable;
+        $this->lastActivity = new \DateTimeImmutable;
         $this->socket = $socket;
         $this->publicKeyValidator = new PublicKeyValidator(new \Whisp\Loggers\NullLogger);
         $this->logger(new \Whisp\Loggers\NullLogger);
@@ -153,13 +156,13 @@ class Connection
 
     public function handle(): void
     {
-        $this->logger->info('Handling connection with apps: '.print_r($this->apps, true));
+        $this->info(sprintf('Handling connection #%d with %d apps: %s', $this->connectionId, count($this->apps), array_key_exists('default', $this->apps) ? 'default' : 'no default'));
         $selectTimeoutInMs = 30;
 
         // Main event loop for this connection
         while ($this->running) {
-            if (!is_resource($this->stream)) {
-                $this->logger->debug('Stream is not a resource, breaking');
+            if (! is_resource($this->stream)) {
+                $this->debug('Stream is not a resource, breaking');
                 $this->running = false;
                 break;
             }
@@ -167,30 +170,31 @@ class Connection
             $read = $this->setupStreamSelection();
 
             if (empty($read)) {
-                $this->logger->debug('No valid streams to read from, all done.');
+                $this->debug('No valid streams to read from, all done.');
                 $this->running = false;
                 break;
             }
 
             $continue = $this->performStreamSelection($read, $selectTimeoutInMs);
             if ($continue === false) {
-                $this->logger->debug('Stream selection failed, breaking');
+                $this->debug('Stream selection failed, breaking');
                 $this->running = false;
                 break;
             }
 
             // Try again
             if ($continue === null) {
-                $this->logger->debug('Stream selection failed, trying again');
+                $this->debug('Stream selection failed, trying again');
+
                 continue;
             }
 
             $this->handleStreamData($read);
             $this->cleanupClosedChannels();
 
-            $inactiveSeconds = $this->lastActivity->diff(new \DateTimeImmutable())->s;
+            $inactiveSeconds = $this->lastActivity->diff(new \DateTimeImmutable)->s;
             if ($inactiveSeconds > $this->disconnectInactivitySeconds) {
-                $this->logger->info("Connection inactive for {$inactiveSeconds} seconds, disconnecting");
+                $this->info("Connection inactive for {$inactiveSeconds} seconds, disconnecting");
                 $this->disconnect('Connection inactive for too long');
             }
         }
@@ -233,7 +237,7 @@ class Connection
      * @param  int  $selectTimeoutInMs  Timeout in milliseconds
      * @return bool|null Whether to continue the main loop, or null if we should try again
      */
-    private function performStreamSelection(array &$read, int $selectTimeoutInMs): bool|null
+    private function performStreamSelection(array &$read, int $selectTimeoutInMs): ?bool
     {
         $write = $except = [];
         $result = @stream_select($read, $write, $except, 0, $selectTimeoutInMs * 1000);
@@ -241,18 +245,20 @@ class Connection
 
         if ($result === false) {
             // Check if it's just an interrupted system call
-            $this->logger->debug('stream_select result: '.$result.', last error: ' . var_export($lastError, true));
+            $this->debug('stream_select result: '.$result.', last error: '.var_export($lastError, true));
             if ($lastError === PCNTL_EINTR) {
-                $this->logger->debug('stream_select interrupted EINTR, retrying...');
+                $this->debug('stream_select interrupted EINTR, retrying...');
+
                 return null; // Try again
             }
 
             if ($lastError === PCNTL_ECHILD) {
-                $this->logger->debug('stream_select failed, ECHILD, should happen once on command exiting, and that\'s fine: '.error_get_last()['message']);
+                $this->debug('stream_select failed, ECHILD, should happen once on command exiting, and that\'s fine: '.error_get_last()['message']);
+
                 return null; // Try again
             }
 
-            $this->logger->debug('stream_select failed: '.error_get_last()['message']);
+            $this->debug('stream_select failed: '.error_get_last()['message']);
             $this->running = false;
 
             return false;
@@ -292,19 +298,19 @@ class Connection
         $meta = stream_get_meta_data($stream);
 
         if ($data === false) {
-            $this->logger->error('Error reading from SSH client stream: '.error_get_last()['message'] ?? '');
-            $this->logger->info("Connection #{$this->connectionId} closed by peer");
+            $this->error('Error reading from SSH client stream: '.error_get_last()['message'] ?? '');
+            $this->info("Connection #{$this->connectionId} closed by peer");
             $this->running = false;
         } elseif ($data === '') {
             if ($meta['timed_out']) {
-                $this->logger->debug('Stream timed out, disconnecting');
+                $this->debug('Stream timed out, disconnecting');
                 $this->disconnect('Stream timed out');
             }
-            $this->logger->debug('Data is empty');
+            $this->debug('Data is empty');
             $this->disconnect('Connection closed');
         } else {
             $this->handleData($data);
-            $this->lastActivity = new \DateTimeImmutable();
+            $this->lastActivity = new \DateTimeImmutable;
         }
     }
 
@@ -320,7 +326,7 @@ class Connection
                 if ($stream === $pty->getMaster()) {
                     $bytesWritten = $channel->forwardFromPty();
                     if ($bytesWritten > 0) { // We got data, so we're active
-                        $this->lastActivity = new \DateTimeImmutable();
+                        $this->lastActivity = new \DateTimeImmutable;
                     }
                     break;
                 }
@@ -384,29 +390,26 @@ class Connection
         }
 
         if (! is_resource($this->stream)) {
-            $this->logger->debug('Cannot write to closed stream');
+            $this->debug('Cannot write to closed stream');
 
             return false;
         }
 
         $packet = $this->packetHandler->constructPacket($data);
         if ($packet === false) {
-            $this->logger->error('Failed to construct packet');
+            $this->error('Failed to construct packet');
 
             return false;
         }
 
-        $this->logger->debug('Writing packet, length: '.strlen($packet));
         $result = @fwrite($this->stream, $packet);
 
         if ($result === false) {
             $error = error_get_last();
-            $this->logger->debug('Write failed: '.($error ? $error['message'] : 'unknown error'));
+            $this->debug('Write failed: '.($error ? $error['message'] : 'unknown error'));
 
             return false;
         }
-
-        $this->logger->debug('Write result: '.var_export($result, true));
 
         return $result;
     }
@@ -417,7 +420,7 @@ class Connection
         if (! $this->clientVersion) {
             $this->clientVersion = trim($data);
             fwrite($this->stream, $this->serverVersion."\r\n");
-            $this->logger->info("Client version set: {$this->clientVersion}, responded with {$this->serverVersion}");
+            $this->info("Client version set: {$this->clientVersion}, responded with {$this->serverVersion}");
 
             return;
         }
@@ -431,36 +434,36 @@ class Connection
             try {
                 // First just read the length
                 $packetLength = unpack('N', substr($this->inputBuffer, 0, 4))[1];
-                $this->logger->debug("Packet length: {$packetLength}, buffer length: " . strlen($this->inputBuffer));
+                $this->debug("Packet length: {$packetLength}, buffer length: ".strlen($this->inputBuffer));
                 $totalNeeded = 4 + $packetLength + ($this->packetHandler->encryptionActive ? 16 : 0); // length + payload + MAC tag if encrypted
 
                 // We probably got bad data that when decrypted is a ridiculous packet size
                 if ($totalNeeded > $this->maxPacketSize) {
-                    $this->logger->error("Protocol error: packet too large ({$totalNeeded} > {$this->maxPacketSize}), bad packet received");
+                    $this->error("Protocol error: packet too large ({$totalNeeded} > {$this->maxPacketSize}), bad packet received");
                     $this->disconnect('Protocol error: packet too large, bad packet received');
                     break;
                 }
 
                 // If we don't have the complete packet yet, wait for more data
                 if (strlen($this->inputBuffer) < $totalNeeded) {
-                    $this->logger->debug("Waiting for complete packet: need {$totalNeeded} bytes, have ".strlen($this->inputBuffer));
+                    $this->debug("Waiting for complete packet: need {$totalNeeded} bytes, have ".strlen($this->inputBuffer));
                     break;
                 }
 
                 // Try to parse the complete packet
-                $this->logger->debug("Attempting to parse packet, rekey in progress: " .
+                $this->debug('Attempting to parse packet, rekey in progress: '.
                     ($this->packetHandler->rekeyInProgress ? 'yes' : 'no'));
 
                 [$packet, $bytesUsed] = $this->packetHandler->fromData($this->inputBuffer);
 
                 if ($packet === null) {
                     if ($bytesUsed === 0) {
-                        $this->logger->debug('Packet parsing returned null with 0 bytes used, likely incomplete packet');
+                        $this->debug('Packet parsing returned null with 0 bytes used, likely incomplete packet');
                         break;
                     }
 
                     // We were sent bad data. We are just going to disconnect, the client is probably bad/misbehaving
-                    $this->logger->error("Failed to parse packet, bad packet received. Bytes used: {$bytesUsed}");
+                    $this->error("Failed to parse packet, bad packet received. Bytes used: {$bytesUsed}");
                     $badPacketCount++;
                     if ($badPacketCount > 3) {
                         $this->disconnect('Protocol error: too many bad packets');
@@ -475,14 +478,14 @@ class Connection
                 // Handle the packet before processing any more data
                 $this->handlePacket($packet);
             } catch (\Exception $e) {
-                $this->logger->error('Error processing packet: '.$e->getMessage());
+                $this->error('Error processing packet: '.$e->getMessage());
                 // On error, skip one byte and try to resync
                 $this->inputBuffer = substr($this->inputBuffer, 1);
             }
 
             // Safety check for buffer size
             if (strlen($this->inputBuffer) > 1048576) { // 1MB limit
-                $this->logger->error('Input buffer too large, disconnecting');
+                $this->error('Input buffer too large, disconnecting');
                 $this->disconnect('Protocol error: buffer overflow');
 
                 return;
@@ -492,12 +495,12 @@ class Connection
 
     private function handlePacket(Packet $packet)
     {
-        $this->logger->debug("Handling packet: {$packet->type->name}, packet length: " . strlen($packet->message));
+        $this->debug("Handling packet: {$packet->type->name}, packet length: ".strlen($packet->message));
 
         // Special debug for NEWKEYS which is crucial for rekeying
         if ($packet->type === MessageType::NEWKEYS) {
-            $this->logger->debug("Received NEWKEYS packet during " .
-                ($this->packetHandler->rekeyInProgress ? "rekey process" : "initial key exchange"));
+            $this->debug('Received NEWKEYS packet during '.
+                ($this->packetHandler->rekeyInProgress ? 'rekey process' : 'initial key exchange'));
         }
 
         match ($packet->type) {
@@ -515,7 +518,7 @@ class Connection
             MessageType::IGNORE => $this->handleIgnore($packet),
             MessageType::DEBUG => $this->handleDebug($packet),
             MessageType::UNIMPLEMENTED => $this->handleUnimplemented($packet),
-            default => $this->logger->info('Unsupported packet type: '.$packet->type->name),
+            default => $this->info('Unsupported packet type: '.$packet->type->name),
         };
 
         return $packet;
@@ -525,7 +528,7 @@ class Connection
     {
         // If we've already done an initial key exchange, this is a rekey request
         if ($this->packetHandler->hasCompletedInitialKeyExchange) {
-            $this->logger->debug('Received rekey request from client');
+            $this->debug('Received rekey request from client');
             $this->packetHandler->rekeyInProgress = true;
         }
 
@@ -540,11 +543,11 @@ class Connection
      */
     private function handleKexDHInit(Packet $packet): void
     {
-        if (!$this->kexNegotiator) {
+        if (! $this->kexNegotiator) {
             throw new \Exception('KexNegotiator not initialized');
         }
 
-        if (!isset($this->serverHostKey)) {
+        if (! isset($this->serverHostKey)) {
             throw new \Exception('Host key not set');
         }
 
@@ -557,11 +560,11 @@ class Connection
             // after calling response() which computes it
             $kexResponse = $kex->response();
             $this->sessionId = $kex->sessionId;
-            $this->logger->debug('Initial SSH session ID established');
+            $this->debug('Initial SSH session ID established');
         } else {
             // For rekeys, set the session ID on the Kex object before generating the response
             $kex->sessionId = $this->sessionId;
-            $this->logger->debug('Using existing session ID for rekey');
+            $this->debug('Using existing session ID for rekey');
             $kexResponse = $kex->response();
         }
 
@@ -586,26 +589,26 @@ class Connection
     {
         if ($this->packetHandler->hasCompletedInitialKeyExchange) {
             // Rekey scenario - send NEWKEYS response
-            $this->logger->debug("Rekey in progress - received NEWKEYS from client, sending our NEWKEYS response");
+            $this->debug('Rekey in progress - received NEWKEYS from client, sending our NEWKEYS response');
             $this->write(chr(MessageType::NEWKEYS->value));
 
             // Switch to new keys (only after both sides have sent NEWKEYS)
-            $this->logger->debug("Switching to new keys after rekey");
+            $this->debug('Switching to new keys after rekey');
             $this->packetHandler->switchToNewKeys();
-            $this->logger->debug('Completed rekey process');
+            $this->debug('Completed rekey process');
         } else {
             // Initial key exchange
-            $this->logger->debug("Initial key exchange - sending NEWKEYS response");
+            $this->debug('Initial key exchange - sending NEWKEYS response');
             $this->write(chr(MessageType::NEWKEYS->value));
 
-            $this->logger->debug("Deriving initial encryption keys");
+            $this->debug('Deriving initial encryption keys');
             $this->packetHandler->deriveKeys();
 
             // Enable encryption and mark initial key exchange as complete
             $this->packetHandler->encryptionActive = true;
             $this->packetHandler->hasCompletedInitialKeyExchange = true;
 
-            $this->logger->debug('Initial encryption established');
+            $this->debug('Initial encryption established');
         }
     }
 
@@ -617,7 +620,7 @@ class Connection
     public function handleServiceRequest(Packet $packet)
     {
         [$serviceName] = $packet->extractFormat('%s');
-        $this->logger->info("Service request: {$serviceName}");
+        $this->info("Service request: {$serviceName}");
 
         // Accept the user auth service
         if ($serviceName === 'ssh-userauth') {
@@ -649,8 +652,8 @@ class Connection
         $payload .= $this->packetHandler->packString(implode(',', $supportedSigAlgs));
 
         // Send the raw payload with the correct message type byte prepended
-        $this->write(MessageType::chr(MessageType::EXT_INFO) . $payload);
-        $this->logger->info('Sent EXT_INFO with server-sig-algs: ' . implode(',', $supportedSigAlgs));
+        $this->write(MessageType::chr(MessageType::EXT_INFO).$payload);
+        $this->info('Sent EXT_INFO with server-sig-algs: '.implode(',', $supportedSigAlgs));
     }
 
     /**
@@ -673,59 +676,63 @@ class Connection
             $this->username = $username;
         }
 
-        $this->logger->info("Auth request: user=$username, service=$service, method=$method");
+        $this->info("Auth request: user=$username, service=$service, method=$method");
 
         // Handle the 'none' authentication method
         if ($method === 'none') {
             if (is_null($this->lastAuthMethod)) {
-                $this->logger->info('Initial auth request - client querying available methods');
+                $this->info('Initial auth request - client querying available methods');
                 $this->lastAuthMethod = $method;
                 // List all supported methods
                 $this->writePacked(MessageType::USERAUTH_FAILURE, [
                     implode(',', ['publickey', 'keyboard-interactive', 'password', 'none']),
-                    false
+                    false,
                 ]);
+
                 return;
             }
 
-            $this->logger->info("Client explicitly chose 'none' auth method after trying: {$this->lastAuthMethod}");
+            $this->info("Client explicitly chose 'none' auth method after trying: {$this->lastAuthMethod}");
             $this->writePacked(MessageType::USERAUTH_SUCCESS);
             $this->authenticationComplete = true;
+
             return;
         }
         $this->lastAuthMethod = $method;
 
         // Handle keyboard-interactive auth - accept automatically
         if ($method === 'keyboard-interactive') {
-            $this->logger->info("Accepting keyboard-interactive auth for user: {$username}");
+            $this->info("Accepting keyboard-interactive auth for user: {$username}");
             $this->writePacked(MessageType::USERAUTH_SUCCESS);
             $this->authenticationComplete = true;
+
             return;
         }
 
         // Handle password auth - accept any password
         if ($method === 'password') {
             // Skip reading the password since we're accepting anything
-            $this->logger->info("Accepting password auth for user: {$username}");
+            $this->info("Accepting password auth for user: {$username}");
             $this->writePacked(MessageType::USERAUTH_SUCCESS);
             $this->authenticationComplete = true;
+
             return;
         }
 
         // Authing with public key, we want to add this to our environment variable for apps to use
         // But only once we've verified the signature
         if ($method === 'publickey') {
-            $this->logger->info("Received public key auth request");
+            $this->info('Received public key auth request');
 
             // Explicitly parse the publickey request fields according to RFC 4252
             [$hasSignature] = $packet->extractFormat('%b');
             [$keyAlgorithmName] = $packet->extractFormat('%s'); // e.g. rsa-sha2-256
             [$publicKeyBlob] = $packet->extractFormat('%s'); // e.g. ssh-rsa exponent modulus | ssh-ed25519 key (32 bytes) | ecdsa-sha2-nistp256 curve_name key
 
-            $this->logger->info("Parsed pk auth request: hasSig=".($hasSignature?'1':'0').", keyAlgo='{$keyAlgorithmName}'");
+            $this->info('Parsed pk auth request: hasSig='.($hasSignature ? '1' : '0').", keyAlgo='{$keyAlgorithmName}'");
 
             if ($hasSignature) {
-                $this->logger->info("Request has signature, extracting signature blob");
+                $this->info('Request has signature, extracting signature blob');
                 [$signatureBlob] = $packet->extractFormat('%s');
 
                 // Validate the signature
@@ -738,30 +745,33 @@ class Connection
                     service: $service
                 );
                 $isValidString = $isValid ? 'true' : 'false';
-                $this->logger->info("Signature validation result: {$isValidString}");
+                $this->info("Signature validation result: {$isValidString}");
 
                 // They offered a public key, and they successfully validated they have the private key
                 if ($isValid) {
-                    $this->logger->info("Public key signature validated successfully for user: {$username}");
+                    $this->info("Public key signature validated successfully for user: {$username}");
                     $this->authenticatedPublicKey = $this->publicKeyValidator->getSshKeyFromBlob($publicKeyBlob); // Store the validated key blob
                     $this->writePacked(MessageType::USERAUTH_SUCCESS);
                     $this->authenticationComplete = true;
+
                     return;
                 }
 
-                $this->logger->warning("Public key signature validation failed for user: {$username}");
+                $this->warning("Public key signature validation failed for user: {$username}");
                 $this->writePacked(MessageType::USERAUTH_FAILURE, [['publickey', 'none'], false]);
+
                 return;
             } else {
                 // Client is checking if the key is acceptable (no signature provided yet)
-                $this->logger->info("Public key provided without signature, sending PK_OK for user: {$username}");
+                $this->info("Public key provided without signature, sending PK_OK for user: {$username}");
                 $this->writePacked(MessageType::USERAUTH_PK_OK, [$keyAlgorithmName, $publicKeyBlob]);
+
                 return;
             }
         }
 
         // If we reached here, let them through without key authentication
-        $this->logger->info("Allowing access without key authentication");
+        $this->info('Allowing access without key authentication');
         $this->writePacked(MessageType::USERAUTH_SUCCESS);
         $this->authenticationComplete = true;
     }
@@ -772,7 +782,7 @@ class Connection
         [$channelType, $senderChannel, $initialWindowSize, $maxPacketSize] = $packet->extractFormat('%s%u%u%u');
         $this->maxPacketSize = $maxPacketSize;
 
-        $this->logger->info("Channel open request: type=$channelType, sender=$senderChannel, window=$initialWindowSize, max_packet=$maxPacketSize");
+        $this->info("Channel open request: type=$channelType, sender=$senderChannel, window=$initialWindowSize, max_packet=$maxPacketSize");
 
         // We'll use the same channel number for simplicity
         $recipientChannel = $senderChannel;
@@ -780,6 +790,7 @@ class Connection
         // Create new channel
         $channel = new Channel($recipientChannel, $senderChannel, $initialWindowSize, $maxPacketSize, $channelType);
         $channel->setConnection($this);
+        $channel->setLogger($this->logger);
         $this->activeChannels[$recipientChannel] = $channel;
 
         // Send channel open confirmation
@@ -789,13 +800,13 @@ class Connection
     public function handleChannelRequest(Packet $packet)
     {
         [$recipientChannel, $requestType, $wantReply] = $packet->extractFormat('%u%s%b');
-        $this->logger->info("Channel request: channel=$recipientChannel, type=$requestType, want_reply=$wantReply");
+        $this->info("Channel request: channel=$recipientChannel, type=$requestType, want_reply=$wantReply");
 
         $channelSuccessReply = $this->packetHandler->packValue(MessageType::CHANNEL_SUCCESS, $recipientChannel);
         $channelFailureReply = $this->packetHandler->packValue(MessageType::CHANNEL_FAILURE, $recipientChannel);
 
         if (! isset($this->activeChannels[$recipientChannel])) {
-            $this->logger->error("Channel {$recipientChannel} not found");
+            $this->error("Channel {$recipientChannel} not found");
             if ($wantReply) {
                 $this->write($channelFailureReply);
             }
@@ -822,10 +833,10 @@ class Connection
                 if ($this->requestedApp !== 'default') {
                     // We already have a great non-default app so we'll use that
                     $app = $this->requestedApp;
-                    $this->logger->info("Received exec request, ignoring and using username app: {$app}");
+                    $this->info("Received exec request, ignoring and using username app: {$app}");
                 } else {
                     [$this->requestedApp] = $packet->extractFormat('%s');
-                    $this->logger->info("Received exec request with app: {$this->requestedApp}");
+                    $this->info("Received exec request with app: {$this->requestedApp}");
                 }
 
                 // Start the command interactively
@@ -851,7 +862,7 @@ class Connection
             case 'env':
                 // Client setting an environment variable
                 [$name, $value] = $packet->extractFormat('%s%s');
-                $this->logger->info("Received env request: name=$name, value=$value");
+                $this->info("Received env request: name=$name, value=$value");
 
                 $channel->setEnvironmentVariable($name, $value);
 
@@ -863,12 +874,12 @@ class Connection
             case 'signal':
                 // Client sent a signal (like Ctrl+C)
                 [$signalName] = $packet->extractFormat('%s');
-                $this->logger->info("Received signal: {$signalName}");
+                $this->info("Received signal: {$signalName}");
                 break;
 
             default:
                 // Unknown request type
-                $this->logger->info("Unhandled channel request type: {$requestType}");
+                $this->info("Unhandled channel request type: {$requestType}");
                 if ($wantReply) {
                     $this->write($channelFailureReply);
                 }
@@ -882,12 +893,12 @@ class Connection
      */
     private function handlePtyRequest(Channel $channel, Packet $packet): bool
     {
-        $this->logger->debug('Handling PTY request');
+        $this->debug('Handling PTY request');
 
         // Extract terminal parameters
         [$term, $widthChars, $heightRows, $widthPixels, $heightPixels] = $packet->extractFormat('%s%u%u%u%u');
 
-        $this->logger->debug(sprintf(
+        $this->debug(sprintf(
             'PTY request parameters: term=%s, cols=%d, rows=%d, width_px=%d, height_px=%d',
             $term,
             $widthChars,
@@ -904,7 +915,7 @@ class Connection
         $packet->offset += 4;
 
         if ($modesLength > 0) {
-            $this->logger->debug("Found terminal modes string of length: {$modesLength}");
+            $this->debug("Found terminal modes string of length: {$modesLength}");
 
             // Read the modes string
             $modesString = substr($packet->message, $packet->offset, $modesLength);
@@ -937,14 +948,11 @@ class Connection
                     }
                 }
 
-                $this->logger->debug(sprintf('Terminal mode: %s (0x%02X) = %d', $modeName, $opcode, $value));
+                $this->debug(sprintf('Terminal mode: %s (0x%02X) = %d', $modeName, $opcode, $value));
             }
-        } else {
-            $this->logger->debug('No terminal modes sent by client');
         }
 
         try {
-            $this->logger->debug('Storing terminal info in channel');
             // Store terminal info in the channel
             $channel->setTerminalInfo(
                 $term,
@@ -955,26 +963,19 @@ class Connection
                 $modes
             );
 
-            $this->logger->debug('Creating PTY');
             // Create a PTY for this channel if it doesn't exist
             if (! $channel->getPty()) {
-                $this->logger->debug('No existing PTY, creating new one');
                 if (! $channel->createPty()) {
-                    $this->logger->error('Failed to create PTY');
+                    $this->error('Failed to create PTY');
 
                     return false;
                 }
-                $this->logger->debug('PTY created successfully');
-            } else {
-                $this->logger->debug('Using existing PTY');
             }
-
-            $this->logger->debug('PTY setup successful');
 
             return true;
         } catch (\Exception $e) {
-            $this->logger->error('Failed to handle PTY request: '.$e->getMessage());
-            $this->logger->error('Stack trace: '.$e->getTraceAsString());
+            $this->error('Failed to handle PTY request: '.$e->getMessage());
+            $this->error('Stack trace: '.$e->getTraceAsString());
 
             return false;
         }
@@ -988,7 +989,7 @@ class Connection
     {
         [$widthChars, $heightRows, $widthPixels, $heightPixels] = $packet->extractFormat('%u%u%u%u');
 
-        $this->logger->debug(sprintf(
+        $this->debug(sprintf(
             'Window change request: cols=%d, rows=%d, width_px=%d, height_px=%d',
             $widthChars,
             $heightRows,
@@ -1000,12 +1001,12 @@ class Connection
         if ($pty = $channel->getPty()) {
             try {
                 $pty->setWindowSize(new WinSize($heightRows, $widthChars, $widthPixels, $heightPixels));
-                $this->logger->debug('Window size updated successfully');
+                $this->debug('Window size updated successfully');
             } catch (\Exception $e) {
-                $this->logger->error('Failed to update window size: '.$e->getMessage());
+                $this->error('Failed to update window size: '.$e->getMessage());
             }
         } else {
-            $this->logger->warning('Window change request received but no PTY available');
+            $this->warning('Window change request received but no PTY available');
         }
     }
 
@@ -1020,7 +1021,7 @@ class Connection
         [$recipientChannel, $data] = $packet->extractFormat('%u%s');
 
         if (! isset($this->activeChannels[$recipientChannel])) {
-            $this->logger->error("Channel {$recipientChannel} not found");
+            $this->error("Channel {$recipientChannel} not found");
 
             return;
         }
@@ -1087,19 +1088,19 @@ class Connection
     private function handleIgnore(Packet $packet): void
     {
         // Just ignore this packet, as per RFC
-        $this->logger->debug('Received IGNORE message');
+        $this->debug('Received IGNORE message');
     }
 
     private function handleDebug(Packet $packet): void
     {
         [$alwaysDisplay, $message] = $packet->extractFormat('%b%s');
-        $this->logger->debug("Received DEBUG message: $message");
+        $this->debug("Received DEBUG message: $message");
     }
 
     private function handleUnimplemented(Packet $packet): void
     {
         [$seqNum] = $packet->extractFormat('%u');
-        $this->logger->debug("Received UNIMPLEMENTED for sequence number: $seqNum");
+        $this->debug("Received UNIMPLEMENTED for sequence number: $seqNum");
     }
 
     /**
@@ -1112,7 +1113,7 @@ class Connection
             [DisconnectReason::DISCONNECT_BY_APPLICATION->value, $reason, 'en']
         );
 
-        $this->logger->info("Initiated disconnect: {$reason}");
+        $this->info("Initiated disconnect: {$reason}");
 
         // Close the underlying connection
         $this->stream = null;
@@ -1124,7 +1125,7 @@ class Connection
      */
     private function closeChannel(Channel $channel)
     {
-        $this->logger->debug('Closing channel #'.$channel->recipientChannel);
+        $this->debug('Closing channel #'.$channel->recipientChannel);
         $this->writePacked(MessageType::CHANNEL_CLOSE, $channel->recipientChannel);
 
         $channel->close();
@@ -1152,7 +1153,6 @@ class Connection
     }
 
     /**
-     *
      * @return array{string, array<string, string>}
      */
     private function resolveApp(string $app): array
@@ -1167,7 +1167,7 @@ class Connection
             // Convert route pattern to regex
             // cursor-party-{room} -> cursor-party-(?<room>[^/]+)
             $pattern = preg_replace('/\{([^}]+)\}/', '(?<$1>[^/]+)', $baseApp);
-            $pattern = '/^' . str_replace('/', '\/', $pattern) . '$/';
+            $pattern = '/^'.str_replace('/', '\/', $pattern).'$/';
 
             if (preg_match($pattern, $app, $matches)) {
                 // We found a match! Now we can extract the parameters
@@ -1200,7 +1200,7 @@ class Connection
     private function startInteractiveCommand(Channel $channel, string $app): bool
     {
         if (! $channel->getPty()) {
-            $this->logger->error('Cannot start command without PTY - interactive terminal required');
+            $this->error('Cannot start command without PTY - interactive terminal required');
             $this->disconnect('Interactive terminal required. Please use: ssh -t');
 
             return false;
@@ -1212,7 +1212,7 @@ class Connection
         } catch (\InvalidArgumentException $e) {
             // Unsupported app, what's going on like?
             // Warp passes a 200 line script - so 'resolveApp' will fallback to 'default' if available, so we can just error here, as the resolveApp method will fallback to the default app, if it exists
-            $this->logger->warning(sprintf("Unknown app: %s, falling back to default app", substr($app, 0, 100)));
+            $this->warning(sprintf('Unknown app: %s, falling back to default app', substr($app, 0, 100)));
             $this->writeChannelData($channel, "\n\033[1;33m⚠️  Warning\033[0m: Unknown app: '{$app}'\n");
             usleep(100000);
 
@@ -1238,10 +1238,10 @@ class Connection
 
         // Set any extracted parameters as environment variables
         foreach ($params as $paramName => $paramValue) {
-            $channel->setEnvironmentVariable('WHISP_PARAM_' . strtoupper($paramName), (string) $paramValue);
+            $channel->setEnvironmentVariable('WHISP_PARAM_'.strtoupper($paramName), (string) $paramValue);
         }
 
-        $this->logger->info(sprintf(
+        $this->info(sprintf(
             'Set environment variables for connection #%d: WHISP_CLIENT_IP=%s, WHISP_APP=%s, WHISP_TTY=%s, WHISP_USERNAME=%s, params=%s',
             $this->connectionId,
             $this->clientIp,
@@ -1253,15 +1253,15 @@ class Connection
 
         // Get the base command and add any parameters as arguments
         $command = $this->apps[$app];
-        if (!empty($params)) {
-            $command .= ' ' . implode(' ', array_map('escapeshellarg', $params)); // So we won't pass the param name which isn't ideal, but they'll be in order, so that works for now
+        if (! empty($params)) {
+            $command .= ' '.implode(' ', array_map('escapeshellarg', $params)); // So we won't pass the param name which isn't ideal, but they'll be in order, so that works for now
         }
 
         $success = $channel->startCommand($command);
-        $this->logger->info("Started interactive command: {$command}");
+        $this->info("Started interactive command: {$command}");
 
         if (! $success) {
-            $this->logger->error("Failed to start command: {$command}");
+            $this->error("Failed to start command: {$command}");
 
             return false;
         }
@@ -1272,8 +1272,8 @@ class Connection
     /**
      * Send exit status for a channel
      *
-     * @param Channel $channel The channel to send status for
-     * @param int $exitCode The exit code to send
+     * @param  Channel  $channel  The channel to send status for
+     * @param  int  $exitCode  The exit code to send
      * @return bool Whether sending the status succeeded
      */
     public function sendExitStatus(Channel $channel, int $exitCode)

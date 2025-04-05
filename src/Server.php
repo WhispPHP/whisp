@@ -6,8 +6,8 @@ declare(ticks=1);
 
 namespace Whisp;
 
-use Psr\Log\LoggerInterface;
 use Socket;
+use Whisp\Concerns\WritesLogs;
 use Whisp\Loggers\NullLogger;
 
 /**
@@ -15,9 +15,9 @@ use Whisp\Loggers\NullLogger;
  */
 class Server
 {
-    private array $apps = [];
+    use WritesLogs;
 
-    private LoggerInterface $logger;
+    private array $apps = [];
 
     private ?Socket $socket = null;
 
@@ -32,8 +32,8 @@ class Server
         public readonly string $host = '0.0.0.0',
         bool $autoDiscoverApps = true,
     ) {
-        $this->logger = new NullLogger();
-        $this->hostKey = new ServerHostKey();
+        $this->setLogger(new NullLogger);
+        $this->hostKey = new ServerHostKey;
         if ($autoDiscoverApps) {
             $this->autoDiscoverApps();
         }
@@ -111,6 +111,7 @@ class Server
 
         return $this;
     }
+
     /**
      * Run the server with the provided supported apps
      *
@@ -118,17 +119,10 @@ class Server
      */
     public function run(string|array $apps = []): void
     {
-        if (!empty($apps)) {
+        if (! empty($apps)) {
             $this->addApps($apps);
         }
         $this->start();
-    }
-
-    public function setLogger(LoggerInterface $logger): self
-    {
-        $this->logger = $logger;
-
-        return $this;
     }
 
     /**
@@ -199,14 +193,14 @@ class Server
 
         $pid = pcntl_fork();
         if ($pid == -1) {
-            $this->logger->error("Failed to fork for connection #$connectionId");
+            $this->error("Failed to fork for connection #$connectionId");
             socket_close($clientSocket);
 
             return;
         }
 
         if ($pid == 0) {
-            $this->logger->debug("Child process {$pid} created for connection #{$connectionId}");
+            $this->debug("Child process {$pid} created for connection #{$connectionId}");
 
             // Child process - reset signal handlers
             pcntl_signal(SIGINT, SIG_DFL);
@@ -222,7 +216,7 @@ class Server
                 ->serverHostKey($this->hostKey)
                 ->handle();
 
-            $this->logger->debug("Connection #{$connectionId} handled");
+            $this->debug("Connection #{$connectionId} handled");
             exit(0); // Exit child process when done
         } else {
             // Parent process
@@ -261,7 +255,7 @@ class Server
         // Reap all finished child processes
         while (($pid = pcntl_waitpid(-1, $status, WNOHANG)) > 0) {
             $connectionId = $this->childProcesses[$pid] ?? 'unknown';
-            $this->logger->info("Child process {$pid} (connection #{$connectionId}) terminated");
+            $this->info("Child process {$pid} (connection #{$connectionId}) terminated");
             unset($this->childProcesses[$pid]);
         }
     }
@@ -281,7 +275,7 @@ class Server
         $this->info(sprintf('Terminating %d child processes', count($this->childProcesses)));
         foreach ($this->childProcesses as $pid => $connectionId) {
             posix_kill($pid, SIGTERM);
-            $this->logger->info("Sent SIGTERM to child process {$pid} (connection #{$connectionId})");
+            $this->info("Sent SIGTERM to child process {$pid} (connection #{$connectionId})");
         }
 
         // Wait for children to terminate (with timeout)
@@ -294,7 +288,7 @@ class Server
         // Force kill any remaining children
         foreach ($this->childProcesses as $pid => $connectionId) {
             posix_kill($pid, SIGKILL);
-            $this->logger->warning("Force killed child process {$pid} (connection #{$connectionId})");
+            $this->warning("Force killed child process {$pid} (connection #{$connectionId})");
         }
 
         $this->info('Server stopped');

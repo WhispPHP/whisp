@@ -77,7 +77,7 @@ class Kex
         $signature = sodium_crypto_sign_detached($exchangeHash, $ed25519Private);
         $signatureBlob = $this->packString('ssh-ed25519').$this->packString($signature);
 
-        $this->logger->debug('Key exchange details:' . print_r([
+        $this->logger->debug('Key exchange details:'.print_r([
             'host_key_blob_len' => strlen($hostKeyBlob),
             'host_key_public' => bin2hex($ed25519Public),
             'signature_len' => strlen($signature),

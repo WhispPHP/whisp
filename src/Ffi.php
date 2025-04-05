@@ -387,7 +387,6 @@ class Ffi
                 return false;
             }
 
-
             return true;
         } catch (\Throwable $e) {
             return false;
@@ -423,7 +422,6 @@ class Ffi
             if ($result === -1) {
                 return false;
             }
-
 
             return true;
         } catch (\Throwable $e) {

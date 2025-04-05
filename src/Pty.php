@@ -2,6 +2,7 @@
 
 namespace Whisp;
 
+use Whisp\Concerns\WritesLogs;
 use Whisp\Enums\TerminalMode;
 use Whisp\Values\WinSize;
 
@@ -12,6 +13,8 @@ use Whisp\Values\WinSize;
  */
 class Pty
 {
+    use WritesLogs;
+
     /**
      * @var resource|null
      */
@@ -475,6 +478,8 @@ class Pty
         $this->childPid = $status['pid'];
         $this->commandRunning = true;
 
+        $this->info(sprintf('Started command: %s with pid %d', $command, $this->childPid));
+
         // Make master stream non-blocking for reading from the process
         stream_set_blocking($this->master, false);
 
@@ -490,6 +495,7 @@ class Pty
                 $status = 0;
                 $pid = pcntl_wait($status);
                 if ($pid > 0) {
+                    $this->debug(sprintf('proc_open child process %d exited with status %d', $pid, $status['exitcode']));
                     $this->commandRunning = false;
                     $this->process = null;
                     $this->childPid = null;
@@ -506,6 +512,7 @@ class Pty
     public function stopCommand(): void
     {
         if ($this->process && is_resource($this->process)) {
+            $this->debug('Stopping command with pid '.$this->childPid);
             proc_terminate($this->process, SIGTERM);
             proc_close($this->process);
         }

@@ -37,6 +37,7 @@ class PacketHandler
     public int $packetSeq_CStoS = 0;
 
     public Kex $kex;
+
     public ?Kex $rekeyKex = null;
 
     private ?AES $encryptor = null;
@@ -49,6 +50,7 @@ class PacketHandler
     public bool $rekeyInProgress = false;
 
     private ?array $pendingKeys = null;
+
     public bool $hasCompletedInitialKeyExchange = false;
 
     public function __construct(
@@ -121,7 +123,7 @@ class PacketHandler
                 'encryptIV_CStoS' => $encryptIV_CStoS,
                 'encryptKey_CStoS' => $encryptKey_CStoS,
                 'encryptIV_StoC' => $encryptIV_StoC,
-                'encryptKey_StoC' => $encryptKey_StoC
+                'encryptKey_StoC' => $encryptKey_StoC,
             ];
         } else {
             $this->encryptIV_CStoS = $encryptIV_CStoS;
@@ -396,8 +398,9 @@ class PacketHandler
 
     public function switchToNewKeys(): void
     {
-        if (!$this->rekeyInProgress || !$this->pendingKeys) {
-            $this->logger->error("switchToNewKeys called but no pending keys available");
+        if (! $this->rekeyInProgress || ! $this->pendingKeys) {
+            $this->logger->error('switchToNewKeys called but no pending keys available');
+
             return;
         }
 
@@ -417,7 +420,7 @@ class PacketHandler
         // Apply the new Kex object but ensure it keeps the original session ID
         if ($this->rekeyKex) {
             // Double-check that the session ID is properly preserved
-            if (!$this->rekeyKex->sessionId) {
+            if (! $this->rekeyKex->sessionId) {
                 $this->rekeyKex->sessionId = $this->kex->sessionId;
             }
             $this->kex = $this->rekeyKex;
