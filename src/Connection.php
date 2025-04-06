@@ -160,7 +160,7 @@ class Connection
     public function handle(): void
     {
         $this->info(sprintf('Handling connection #%d with %d apps: %s', $this->connectionId, count($this->apps), array_key_exists('default', $this->apps) ? 'default' : 'no default'));
-        $selectTimeoutInMs = 30;
+        $selectTimeoutInMs = 20;
 
         // Main event loop for this connection
         while ($this->running) {
