@@ -521,6 +521,7 @@ class Connection
             MessageType::IGNORE => $this->handleIgnore($packet),
             MessageType::DEBUG => $this->handleDebug($packet),
             MessageType::UNIMPLEMENTED => $this->handleUnimplemented($packet),
+            MessageType::GLOBAL_REQUEST => $this->handleGlobalRequest($packet),
             default => $this->info('Unsupported packet type: '.$packet->type->name),
         };
 
@@ -1117,6 +1118,18 @@ class Connection
     {
         [$seqNum] = $packet->extractFormat('%u');
         $this->debug("Received UNIMPLEMENTED for sequence number: $seqNum");
+    }
+
+    private function handleGlobalRequest(Packet $packet): void
+    {
+        [$requestType, $wantReply] = $packet->extractFormat('%s%b');
+        $this->debug("Received GLOBAL_REQUEST: $requestType, want_reply=$wantReply");
+
+        if ($wantReply) {
+            $this->writePacked(MessageType::REQUEST_FAILURE, false);
+        }
+
+        $this->disconnect('Global request not supported');
     }
 
     /**
