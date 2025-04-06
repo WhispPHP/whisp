@@ -51,7 +51,6 @@ afterEach(function () {
     // Clean up process if it's still running
     if (isset($this->process) && is_resource($this->process)) {
         proc_terminate($this->process);
-        proc_close($this->process);
     }
 });
 
@@ -150,3 +149,69 @@ test('manages multiple connections', function () {
         fclose($socket);
     }
 })->markTestSkipped('Not working on GitHub CI atm, but works wonderfully locally and on test servers');
+
+
+test('reloads apps when SIGHUP is received', function () {
+    // Arrange
+    ['process' => $this->process, 'pid' => $pid, 'pipes' => $this->pipes] = start_server_and_wait_for_listening($this->serverScript, $this->host, $this->port);
+    expect($pid)->toBeRunning();
+
+    // Act
+    posix_kill($pid, SIGHUP);
+    $line = fgets($this->pipes[1]); // Read from stdout
+
+    // Assert
+    expect($line)->toContain('Caught SIGHUP in parent');
+    expect($pid)->toBeRunning(); // Should still be running, we're not stopping the server, just restarting and reloading apps
+});
+
+
+test('supports SIGHUP multiple times', function () {
+    // Arrange
+    ['process' => $this->process, 'pid' => $pid, 'pipes' => $this->pipes] = start_server_and_wait_for_listening($this->serverScript, $this->host, $this->port);
+    expect($pid)->toBeRunning();
+
+    // Act
+    posix_kill($pid, SIGHUP);
+    $line = fgets($this->pipes[1]); // Read from stdout
+
+    // Assert
+    expect($line)->toContain('Caught SIGHUP in parent');
+    expect($pid)->toBeRunning(); // Should still be running, we're not stopping the server, just restarting and reloading apps
+
+
+    // Act again
+    posix_kill($pid, SIGHUP);
+    $line = fgets($this->pipes[1]); // Read from stdout
+
+    // TODO: Test a new app in the 'apps' directory gets auto discovered
+
+    // Assert
+    expect($line)->toContain('Caught SIGHUP in parent');
+    expect($pid)->toBeRunning(); // Should still be running, we're not stopping the server, just restarting and reloading apps
+});
+
+test('supports SIGUSR2 restarting server', function () {
+    // Arrange
+    ['process' => $this->process, 'pid' => $pid, 'pipes' => $this->pipes] = start_server_and_wait_for_listening($this->serverScript, $this->host, $this->port);
+    expect($pid)->toBeRunning();
+
+    // Act
+    posix_kill($pid, SIGUSR2);
+
+    // Assert
+    expect(fgets($this->pipes[1]))->toContain('Caught SIGUSR2 in parent');
+    expect(fgets($this->pipes[1]))->toContain('Shutting down...');
+    expect(fgets($this->pipes[1]))->toContain('Terminating 0 child processes');
+    expect(fgets($this->pipes[1]))->toContain('Server stopped');
+    expect(fgets($this->pipes[1]))->toContain('Whisp listening on ');
+    expect($pid)->toBeRunning(); // Should still be running, we're not stopping the server, just restarting and reloading apps
+
+    // Act again
+    posix_kill($pid, SIGUSR2);
+    $line = fread($this->pipes[1], 8096); // Read from stdout
+
+    // Assert
+    expect($line)->toContain('Caught SIGUSR2 in parent');
+    expect($pid)->toBeRunning(); // Should still be running, we're not stopping the server, just restarting and reloading apps
+});

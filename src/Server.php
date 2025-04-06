@@ -23,6 +23,9 @@ class Server
 
     private bool $isRunning = false;
 
+    private bool $signalHandlersSetup = false;
+    private bool $restarting = false;
+
     private array $childProcesses = [];
 
     private ServerHostKey $hostKey;
@@ -34,7 +37,7 @@ class Server
     public function __construct(
         public readonly int $port = 22,
         public readonly string $host = '0.0.0.0',
-        bool $autoDiscoverApps = true,
+        private bool $autoDiscoverApps = true,
     ) {
         $this->setLogger(new NullLogger);
         $this->hostKey = new ServerHostKey;
@@ -81,13 +84,15 @@ class Server
      */
     public function autoDiscoverApps(): self
     {
-        // This won't work actually as we're included as a composer package so we'll be in vendor/whispphp/whisp/src/... hmmm..
-        // Is there another way to get the base path of where the main server script that uses this class is running?
+        if (! $this->autoDiscoverApps) {
+            return $this;
+        }
+
         $baseDir = dirname(realpath($_SERVER['argv'][0]));
         $autoDiscoverFiles = glob($baseDir.'/apps/[a-z]*.php');
 
         $apps = [];
-        // TODO: How do we set the 'default' app? :thinking: Ask users to just create 'default.php' and require another of their apps?
+        // TODO: Document people should always have a 'default' app
         foreach ($autoDiscoverFiles as $file) {
             $appName = strtolower(basename($file, '.php'));
             $appName = str_replace(['[', ']'], ['{', '}'], $appName);
@@ -143,6 +148,11 @@ class Server
         $this->createTcpSocket();
         $this->loop();
         $this->stop();
+
+        if ($this->restarting) {
+            $this->restarting = false;
+            $this->start();
+        }
     }
 
     /**
@@ -241,6 +251,12 @@ class Server
      */
     private function setupSignalHandlers(): void
     {
+        // Don't do this if we've already done it
+        if ($this->signalHandlersSetup) {
+            return;
+        }
+        $this->signalHandlersSetup = true;
+
         pcntl_async_signals(false);
 
         pcntl_signal(SIGCHLD, function ($signo) {
@@ -255,6 +271,23 @@ class Server
         pcntl_signal(SIGTERM, function ($signo) {
             $this->info('Caught SIGTERM in parent (PID='.getmypid().'), shutting down...');
             $this->isRunning = false;
+        });
+
+        /** SIGHUP - reload the apps */
+        pcntl_signal(SIGHUP, function ($signo) {
+            $this->info('Caught SIGHUP in parent (PID='.getmypid().'), reloading apps...');
+            if ($this->autoDiscoverApps) {
+                // Apps could have been removed, so we'll remove all apps then rediscover
+                $this->apps = [];
+                $this->autoDiscoverApps(); // Just rediscover apps without restart
+            }
+        });
+
+        /** SIGUSR2 - restart the server */
+        pcntl_signal(SIGUSR2, function ($signo) {
+            $this->isRunning = false; // Loop will exit then run stop() which will close the socket, then we'll 'start()' again
+            $this->restarting = true;
+            $this->info('Caught SIGUSR2 in parent (PID='.getmypid().'), restarting server...');
         });
     }
 
@@ -276,7 +309,7 @@ class Server
         $this->isRunning = false;
         $this->info('Shutting down...');
 
-        // Close listening socket
+        // Close listening socket, if we're not restarting
         if ($this->socket) {
             socket_close($this->socket);
             $this->socket = null;
