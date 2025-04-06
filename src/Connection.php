@@ -78,8 +78,8 @@ class Connection
         $this->lastActivity = new \DateTimeImmutable;
         $this->socket = $socket;
         $this->publicKeyValidator = new PublicKeyValidator(new \Whisp\Loggers\NullLogger);
-        $this->logger(new \Whisp\Loggers\NullLogger);
         $this->packetHandler(new PacketHandler($socket));
+        $this->logger(new \Whisp\Loggers\NullLogger);
         $this->createStream($socket);
     }
 
