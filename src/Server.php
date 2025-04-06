@@ -189,7 +189,7 @@ class Server
             $write = $except = [];
 
             // Use a short timeout to allow signal processing
-            if (@socket_select($read, $write, $except, 0, 30000)) {
+            if (@socket_select($read, $write, $except, 0, 300000)) {
                 $clientSocket = @socket_accept($this->socket);
                 if ($clientSocket === false) {
                     continue;
