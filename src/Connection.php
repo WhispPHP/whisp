@@ -195,7 +195,8 @@ class Connection
             $this->handleStreamData($read);
             $this->cleanupClosedChannels();
 
-            $inactiveSeconds = $this->lastActivity->diff(new \DateTimeImmutable)->s;
+            $diff = $this->lastActivity->diff(new \DateTimeImmutable);
+            $inactiveSeconds = ($diff->m * 60) + $diff->s;
             if ($inactiveSeconds > $this->disconnectInactivitySeconds) {
                 $this->info("Connection inactive for {$inactiveSeconds} seconds, disconnecting");
                 $this->disconnect('Connection inactive for too long');
