@@ -44,7 +44,7 @@ class Connection
 
     private int $maxPacketSize = 1024 * 1024; // This gets updated when the client opens a channel
 
-    private int $disconnectInactivitySeconds = 60; // Disconnect after 60 seconds of no data (from client or PTY)
+    public int $disconnectInactivitySeconds = 60; // Disconnect after 60 seconds of no data (from client or PTY)
 
     public \DateTimeImmutable $connectedAt;
 
