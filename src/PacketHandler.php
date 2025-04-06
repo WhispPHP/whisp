@@ -7,10 +7,12 @@ namespace Whisp;
 use phpseclib3\Crypt\AES;
 use Psr\Log\LoggerInterface;
 use Socket;
+use Whisp\Concerns\WritesLogs;
 use Whisp\Enums\MessageType;
 
 class PacketHandler
 {
+    use WritesLogs;
     // This will parse the raw data into packets
     // We can then pass the encryption data/IVs/whatever to this class for the entire connection
     // Then we can exctract it from the Connection so that can focus on the application layer
@@ -54,8 +56,7 @@ class PacketHandler
     public bool $hasCompletedInitialKeyExchange = false;
 
     public function __construct(
-        public Socket $socket,
-        public LoggerInterface $logger,
+        public Socket $socket
     ) {
         $this->stream = socket_export_stream($socket);
         stream_set_blocking($this->stream, false);
@@ -63,13 +64,6 @@ class PacketHandler
         if (! sodium_crypto_aead_aes256gcm_is_available()) {
             throw new \RuntimeException('AES-256-GCM not available');
         }
-    }
-
-    public function setLogger(LoggerInterface $logger): self
-    {
-        $this->logger = $logger;
-
-        return $this;
     }
 
     public function setKex(Kex $kex): self
@@ -198,7 +192,7 @@ class PacketHandler
         // Verify our calculation - total length should be multiple of blockSize
         $packetLength = 1 + strlen($payload) + $paddingLength;
         if ($packetLength % $blockSize !== 0) {
-            $this->logger->error("Invalid padding calculation: {$packetLength} is not a multiple of {$blockSize}");
+            $this->error("Invalid padding calculation: {$packetLength} is not a multiple of {$blockSize}");
 
             return false;
         }
@@ -316,7 +310,7 @@ class PacketHandler
             if (method_exists($this, $packMethod)) {
                 $packed .= $this->$packMethod($value);
             } else {
-                $this->logger->error("No pack method for type: {$type}");
+                $this->error("No pack method for type: {$type}");
             }
         }
 
@@ -328,7 +322,7 @@ class PacketHandler
         // Get the length of the packet from the first 4 bytes
         $lengthBytes = substr($data, 0, 4);
         if (strlen($lengthBytes) !== 4) {
-            $this->logger->error('Failed to read length: got '.(strlen($lengthBytes) ?: 0).' bytes');
+            $this->error('Failed to read length: got '.(strlen($lengthBytes) ?: 0).' bytes');
 
             return false;
         }
@@ -337,7 +331,7 @@ class PacketHandler
 
         $cipherAndTag = substr($data, 4, $packetLength + 16);
         if (strlen($cipherAndTag) !== $packetLength + 16) {
-            $this->logger->error(sprintf(
+            $this->error(sprintf(
                 'Failed to read complete ciphertext+tag: expected %d bytes, got %d',
                 $packetLength + 16,
                 strlen($cipherAndTag)
@@ -362,7 +356,7 @@ class PacketHandler
         try {
             $plaintext = $this->decryptor->decrypt($ciphertext);
         } catch (\Exception $e) {
-            $this->logger->error(sprintf(
+            $this->error(sprintf(
                 'Decryption failed for packet seq %d\nError: %s',
                 $this->packetSeq_CStoS,
                 $e->getMessage()
@@ -399,7 +393,7 @@ class PacketHandler
     public function switchToNewKeys(): void
     {
         if (! $this->rekeyInProgress || ! $this->pendingKeys) {
-            $this->logger->error('switchToNewKeys called but no pending keys available');
+            $this->error('switchToNewKeys called but no pending keys available');
 
             return;
         }

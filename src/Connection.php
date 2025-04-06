@@ -79,11 +79,11 @@ class Connection
         $this->socket = $socket;
         $this->publicKeyValidator = new PublicKeyValidator(new \Whisp\Loggers\NullLogger);
         $this->logger(new \Whisp\Loggers\NullLogger);
-        $this->packetHandler(new PacketHandler($socket, $this->logger));
+        $this->packetHandler(new PacketHandler($socket));
         $this->createStream($socket);
     }
 
-    public function logger(LoggerInterface $logger, bool $setPacketHandler = false): self|LoggerInterface
+    public function logger(LoggerInterface $logger): self|LoggerInterface
     {
         if (is_null($logger)) {
             return $this->logger;
@@ -91,10 +91,7 @@ class Connection
 
         $this->logger = $logger;
         $this->publicKeyValidator->setLogger($logger);
-
-        if ($setPacketHandler) {
-            $this->packetHandler->setLogger($logger);
-        }
+        $this->packetHandler->setLogger($logger);
 
         return $this;
     }

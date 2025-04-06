@@ -22,7 +22,7 @@ class FileLogger extends AbstractLogger
     public function log($level, $message, array $context = []): void
     {
         if ($level === LogLevel::DEBUG) {
-            return;
+            // return;
         }
 
         $logMessage = sprintf('%s [%s] %s %s', (new DateTime)->format('Y-m-d H:i:s'), $level, $message, PHP_EOL);
