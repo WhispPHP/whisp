@@ -802,11 +802,24 @@ class Connection
 
     public function handleChannelRequest(Packet $packet)
     {
+        $disallowedChannelTypes = ['direct-tcpip'];
+
         [$recipientChannel, $requestType, $wantReply] = $packet->extractFormat('%u%s%b');
         $this->info("Channel request: channel=$recipientChannel, type=$requestType, want_reply=$wantReply");
 
         $channelSuccessReply = $this->packetHandler->packValue(MessageType::CHANNEL_SUCCESS, $recipientChannel);
         $channelFailureReply = $this->packetHandler->packValue(MessageType::CHANNEL_FAILURE, $recipientChannel);
+
+        if (in_array($requestType, $disallowedChannelTypes)) {
+            $this->error("Channel type {$requestType} not allowed");
+            if ($wantReply) {
+                $this->write($channelFailureReply);
+            }
+
+            $this->disconnect("Channel type {$requestType} not allowed");
+
+            return;
+        }
 
         if (! isset($this->activeChannels[$recipientChannel])) {
             $this->error("Channel {$recipientChannel} not found");
