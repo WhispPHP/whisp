@@ -61,7 +61,7 @@ class PacketHandler
         $this->stream = socket_export_stream($socket);
         stream_set_blocking($this->stream, false);
 
-        if (! sodium_crypto_aead_aes256gcm_is_available()) {
+        if (! sodium_crypto_aead_aes256gcm_is_available() && ! in_array('aes-256-gcm', openssl_get_cipher_methods())) {
             throw new \RuntimeException('AES-256-GCM not available');
         }
     }
