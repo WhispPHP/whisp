@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Whisp;
 
+use Whisp\Command\PtyCommandRunner;
+use Whisp\Command\CommandRunner;
 use Whisp\Concerns\WritesLogs;
 use Whisp\Loggers\NullLogger;
 use Whisp\Values\TerminalInfo;
@@ -22,10 +24,9 @@ class Channel
 
     private bool $outputClosed = false;
 
-    private $process = null; // Process resource
-
     private ?int $childPid = null;
     private array $pendingEnv = [];
+    private ?CommandRunner $commandRunner = null;
 
     public function __construct(
         public readonly int $recipientChannel, // Their channel ID
@@ -107,19 +108,15 @@ class Channel
     }
 
     /**
-     * Read data from the PTY and forward it to the SSH client
+     * Read data from the command and forward it to the SSH client
      * This should be called regularly by the connection's main loop
      *
      * @return int The number of bytes written to the client
      */
-    public function forwardFromPty(): int
+    public function forwardFromCommand(): int
     {
-        if (! $this->pty) {
-            return 0;
-        }
-
         // Read and forward immediately
-        $chunk = $this->pty->read(8192);
+        $chunk = $this->commandRunner->read(8192);
         if ($chunk === '') {
             return 0;
         }
@@ -128,42 +125,36 @@ class Channel
     }
 
     /**
-     * Start a command connected to the PTY
+     * Start a command - either with a PTY or without based on whether there's a Pty.
      */
     public function startCommand(string $command): int|bool
     {
-        if (! $this->pty) {
-            $this->debug('No PTY, creating one');
-            if (! $this->createPty()) {
-                $this->error('Failed to create PTY');
+        $this->commandRunner = ($this->pty) ? new PtyCommandRunner($this->pty) : new CommandRunner;
+        $this->commandRunner->setLogger($this->logger);
 
-                return false;
-            }
-        }
+        $this->logger->debug(sprintf('Starting command: %s, PTY: %s', $command, $this->pty ? 'yes' : 'no'));
 
         // Set environment variables
-        $this->setEnvironmentVariable('PATH', getenv('PATH'));
+        $this->commandRunner->env('PATH', getenv('PATH'));
         if ($this->terminalInfo) {
-            $this->setEnvironmentVariable('TERM', $this->terminalInfo->term);
-            $this->setEnvironmentVariable('WHISP_TERM', $this->terminalInfo->term);
-            $this->setEnvironmentVariable('WHISP_COLS', (string) $this->terminalInfo->widthChars);
-            $this->setEnvironmentVariable('WHISP_ROWS', (string) $this->terminalInfo->heightRows);
-            $this->setEnvironmentVariable('WHISP_WIDTH_PX', (string) $this->terminalInfo->widthPixels);
-            $this->setEnvironmentVariable('WHISP_HEIGHT_PX', (string) $this->terminalInfo->heightPixels);
+            $this->commandRunner->env('TERM', $this->terminalInfo->term);
+            $this->commandRunner->env('WHISP_TERM', $this->terminalInfo->term);
+            $this->commandRunner->env('WHISP_COLS', (string) $this->terminalInfo->widthChars);
+            $this->commandRunner->env('WHISP_ROWS', (string) $this->terminalInfo->heightRows);
+            $this->commandRunner->env('WHISP_WIDTH_PX', (string) $this->terminalInfo->widthPixels);
+            $this->commandRunner->env('WHISP_HEIGHT_PX', (string) $this->terminalInfo->heightPixels);
         }
 
         // Env added while we didn't have a PTY, but now we do, so let's ensure we set it
         foreach ($this->pendingEnv as $name => $value) {
-            $this->setEnvironmentVariable($name, $value);
+            $this->commandRunner->env($name, $value);
         }
 
         // Log environment variables for debugging
-        $this->debug('Command environment variables: '.json_encode($this->pty->getEnvironment()));
-
-        $this->debug('Starting command: '.$command);
+        $this->debug('Command environment variables: '.json_encode($this->commandRunner->getEnvironment()));
 
         // Start the command and store the child PID first
-        $this->childPid = $this->pty->startCommand($command);
+        $this->childPid = $this->commandRunner->start($command);
         if ($this->childPid === false) {
             $this->error('Failed to start command');
 
@@ -191,7 +182,6 @@ class Channel
                     $this->connection->sendExitStatus($this, $exitCode); // TODO: This should be in Channel, not Connection. Weird back and forth of responsibilities in Connection and Channel!
                 }
 
-                $this->process = null;
                 $this->childPid = null;
             }
         });
@@ -202,13 +192,9 @@ class Channel
     /**
      * Write data from SSH client to the running command via PTY
      */
-    public function writeToPty(string $data): int
+    public function writeToCommand(string $data): int
     {
-        if (! $this->pty) {
-            return 0;
-        }
-
-        return $this->pty->write($data);
+        return $this->commandRunner->write($data);
     }
 
     /**
@@ -261,8 +247,8 @@ class Channel
      */
     public function stopCommand(): void
     {
-        if ($this->pty) {
-            $this->pty->stopCommand();
+        if (!is_null($this->commandRunner)) {
+            $this->commandRunner->stop();
         }
 
         if ($this->childPid) {
@@ -270,14 +256,6 @@ class Channel
             posix_kill($this->childPid, SIGTERM);
             $this->childPid = null;
         }
-
-        if ($this->process && is_resource($this->process)) {
-            $this->debug('Stopping command with PID: '.$this->childPid);
-            proc_terminate($this->process, SIGTERM);
-            proc_close($this->process);
-        }
-
-        $this->process = null;
     }
 
     /**
@@ -310,12 +288,25 @@ class Channel
      */
     public function setEnvironmentVariable(string $name, string $value): void
     {
-        if (!is_null($this->pty)) {
-            $this->pty->setEnvironmentVariable($name, $value);
-        } else {
-            $this->pendingEnv[$name] = $value;
+        $this->pendingEnv[$name] = $value;
+        $this->debug("Set environment variable: {$name}={$value}");
+    }
+
+    public function commandIsRunning(): bool
+    {
+        if (! $this->commandRunner) {
+            return false;
         }
 
-        $this->debug("Set environment variable: {$name}={$value}");
+        return $this->commandRunner->isRunning();
+    }
+
+    public function getCommandStdout()
+    {
+        if (! $this->commandRunner) {
+            return null;
+        }
+
+        return $this->commandRunner->getStdout();
     }
 }

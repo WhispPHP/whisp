@@ -208,7 +208,7 @@ class Connection
     }
 
     /**
-     * Set up the streams we want to read from
+     * Set up the streams we want to read from, either SSH or the command
      *
      * @return array Array of streams to read from
      */
@@ -223,11 +223,8 @@ class Connection
         }
 
         foreach ($this->activeChannels as $channel) {
-            if ($pty = $channel->getPty()) {
-                $master = $pty->getMaster();
-                if (is_resource($master)) {
-                    $read[] = $master;
-                }
+            if ($channel->commandIsRunning()) {
+                $read[] = $channel->getCommandStdout();
             }
         }
 
@@ -286,7 +283,7 @@ class Connection
             if ($stream === $this->stream) {
                 $this->handleSshClientData($stream);
             } else {
-                $this->handlePtyData($stream);
+                $this->handleCommandData($stream);
             }
         }
     }
@@ -319,16 +316,16 @@ class Connection
     }
 
     /**
-     * Handle data from a PTY master stream
+     * Handle data from a command stdout stream
      *
-     * @param  resource  $stream  The PTY master stream
+     * @param  resource  $stream  The command stdout stream
      */
-    private function handlePtyData($stream): void
+    private function handleCommandData($stream): void
     {
         foreach ($this->activeChannels as $channel) {
-            if ($pty = $channel->getPty()) {
-                if ($stream === $pty->getMaster()) {
-                    $bytesWritten = $channel->forwardFromPty();
+            if ($channel->commandIsRunning()) {
+                if ($stream === $channel->getCommandStdout()) {
+                    $bytesWritten = $channel->forwardFromCommand();
                     if ($bytesWritten > 0) { // We got data, so we're active
                         $this->lastActivity = new \DateTimeImmutable;
                     }
@@ -858,7 +855,7 @@ class Connection
                 }
 
                 // Start the command interactively
-                $started = $this->startInteractiveCommand($channel, $this->requestedApp);
+                $started = $this->startCommand($channel, $this->requestedApp);
                 if ($wantReply) {
                     $this->write($started ? $channelSuccessReply : $channelFailureReply);
                 }
@@ -866,7 +863,7 @@ class Connection
 
             case 'shell':
                 // For shell requests, start the current requestedApp (which defaults to 'default' but can be overriden by the username)
-                $started = $this->startInteractiveCommand($channel, $this->requestedApp);
+                $started = $this->startCommand($channel, $this->requestedApp);
                 if ($wantReply) {
                     $this->write($started ? $channelSuccessReply : $channelFailureReply);
                 }
@@ -1055,7 +1052,7 @@ class Connection
         }
 
         // Forward the data to the command's stdin via the PTY
-        $channel->writeToPty($data);
+        $channel->writeToCommand($data);
     }
 
     /**
@@ -1219,7 +1216,7 @@ class Connection
     }
 
     /**
-     * Start an interactive command.
+     * Start a command - either with a PTY or without based on whether there's a Pty.
      * It's critical that the 'app' is verified here. It must be a valid app.
      * Do _not_ trust the $app here. It comes from the client.
      *
@@ -1227,14 +1224,8 @@ class Connection
      * @param  string  $app  The app to start
      * @return bool Whether the command was started successfully
      */
-    private function startInteractiveCommand(Channel $channel, string $app): bool
+    private function startCommand(Channel $channel, string $app): bool
     {
-        if (! $channel->getPty()) {
-            $this->error('Cannot start command without PTY - interactive terminal required');
-            $this->disconnect('Interactive terminal required. Please use: ssh -t');
-
-            return false;
-        }
         $params = [];
 
         try {
@@ -1288,7 +1279,7 @@ class Connection
         }
 
         $success = $channel->startCommand($command);
-        $this->info("Started interactive command: {$command}");
+        $this->info("Started command: {$command} with result " . var_export($success, true));
 
         if (! $success) {
             $this->error("Failed to start command: {$command}");

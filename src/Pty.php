@@ -50,6 +50,11 @@ class Pty
         $this->ffi = new Ffi;
     }
 
+    public function getFfi(): Ffi
+    {
+        return $this->ffi;
+    }
+
     /**
      * Get the file descriptor for a given path
      * Required to call various FFI PTY functions
@@ -152,7 +157,7 @@ class Pty
         return $written;
     }
 
-    public function read(int $length = 1024): string
+    public function read(int $length = 2048): string
     {
         if (! $this->master || ! is_resource($this->master)) {
             return '';
@@ -163,7 +168,6 @@ class Pty
         }
 
         $resp = fread($this->master, $length) ?: '';
-
         return $resp;
     }
 
@@ -429,99 +433,6 @@ class Pty
         }
 
         return true;
-    }
-
-    /**
-     * Start a command connected to the PTY
-     */
-    public function startCommand(string $command): int|false
-    {
-        $this->open();
-        $slaveFdNum = $this->getSlaveFd();
-
-        // This is CRITICAL - we must be a session leader to set controlling terminal
-        $sid = posix_setsid();
-        if ($sid === -1) {
-            $errno = posix_get_last_error();
-            // If we're already a session leader, this is expected
-            if ($errno !== 1) { // 1 is EPERM
-                throw new \RuntimeException('Failed to create new session: '.posix_strerror($errno));
-            }
-        }
-
-        // Set the slave PTY as our controlling terminal
-        try {
-            $this->ffi->setControllingTerminal($slaveFdNum);
-        } catch (\Exception $e) {
-            // We'll try to continue anyway
-        }
-
-        $descriptorSpec = [
-            0 => ['file', $this->getSlaveName(), 'r'],
-            1 => ['file', $this->getSlaveName(), 'w'],
-            2 => ['file', $this->getSlaveName(), 'w'],
-        ];
-
-        $this->process = proc_open(
-            $command,
-            $descriptorSpec,
-            $this->pipes,
-            null,
-            $this->environment
-        );
-
-        if (! is_resource($this->process)) {
-            throw new \RuntimeException('Failed to start process: '.error_get_last()['message'] ?? 'unknown error');
-        }
-
-        $status = proc_get_status($this->process);
-        $this->childPid = $status['pid'];
-        $this->commandRunning = true;
-
-        $this->info(sprintf('Started command: %s with pid %d', $command, $this->childPid));
-
-        // Make master stream non-blocking for reading from the process
-        stream_set_blocking($this->master, false);
-
-        // Verify process is still running
-        $status = proc_get_status($this->process);
-        if (! $status['running']) {
-            throw new \RuntimeException("Process exited immediately with status {$status['exitcode']}");
-        }
-
-        // Set up SIGCHLD handler
-        pcntl_signal(SIGCHLD, function ($signo) {
-            if ($signo === SIGCHLD) {
-                $status = 0;
-                $pid = pcntl_wait($status);
-                if ($pid > 0) {
-                    $this->debug(sprintf('proc_open child process %d exited with status %d', $pid, $status['exitcode']));
-                    $this->commandRunning = false;
-                    $this->process = null;
-                    $this->childPid = null;
-                }
-            }
-        });
-
-        return $this->childPid;
-    }
-
-    /**
-     * Stop the running command
-     */
-    public function stopCommand(): void
-    {
-        if ($this->process && is_resource($this->process)) {
-            $this->debug('Stopping command with pid '.$this->childPid);
-            proc_terminate($this->process, SIGTERM);
-            if (is_resource($this->process)) {
-                proc_close($this->process);
-            }
-        }
-
-        $this->commandRunning = false;
-        $this->process = null;
-        $this->childPid = null;
     }
 
     /**
