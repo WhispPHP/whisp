@@ -25,6 +25,7 @@ class Channel
     private $process = null; // Process resource
 
     private ?int $childPid = null;
+    private array $pendingEnv = [];
 
     public function __construct(
         public readonly int $recipientChannel, // Their channel ID
@@ -149,6 +150,11 @@ class Channel
             $this->setEnvironmentVariable('WHISP_ROWS', (string) $this->terminalInfo->heightRows);
             $this->setEnvironmentVariable('WHISP_WIDTH_PX', (string) $this->terminalInfo->widthPixels);
             $this->setEnvironmentVariable('WHISP_HEIGHT_PX', (string) $this->terminalInfo->heightPixels);
+        }
+
+        // Env added while we didn't have a PTY, but now we do, so let's ensure we set it
+        foreach ($this->pendingEnv as $name => $value) {
+            $this->setEnvironmentVariable($name, $value);
         }
 
         // Log environment variables for debugging
@@ -304,7 +310,12 @@ class Channel
      */
     public function setEnvironmentVariable(string $name, string $value): void
     {
-        $this->pty->setEnvironmentVariable($name, $value);
+        if (!is_null($this->pty)) {
+            $this->pty->setEnvironmentVariable($name, $value);
+        } else {
+            $this->pendingEnv[$name] = $value;
+        }
+
         $this->debug("Set environment variable: {$name}={$value}");
     }
 }
