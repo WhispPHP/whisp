@@ -11,9 +11,13 @@ class CommandRunner
     use WritesLogs;
 
     protected array $env = [];
+
     protected ?int $childPid = null;
+
     protected bool $running = false;
+
     protected $process = null;
+
     protected array $pipes = [];
 
     public function isRunning(): bool

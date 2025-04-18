@@ -150,7 +150,6 @@ test('manages multiple connections', function () {
     }
 })->markTestSkipped('Not working on GitHub CI atm, but works wonderfully locally and on test servers');
 
-
 test('reloads apps when SIGHUP is received', function () {
     // Arrange
     ['process' => $this->process, 'pid' => $pid, 'pipes' => $this->pipes] = start_server_and_wait_for_listening($this->serverScript, $this->host, $this->port);
@@ -165,7 +164,6 @@ test('reloads apps when SIGHUP is received', function () {
     expect($pid)->toBeRunning(); // Should still be running, we're not stopping the server, just restarting and reloading apps
 });
 
-
 test('supports SIGHUP multiple times', function () {
     // Arrange
     ['process' => $this->process, 'pid' => $pid, 'pipes' => $this->pipes] = start_server_and_wait_for_listening($this->serverScript, $this->host, $this->port);
@@ -178,7 +176,6 @@ test('supports SIGHUP multiple times', function () {
     // Assert
     expect($line)->toContain('Caught SIGHUP in parent');
     expect($pid)->toBeRunning(); // Should still be running, we're not stopping the server, just restarting and reloading apps
-
 
     // Act again
     posix_kill($pid, SIGHUP);

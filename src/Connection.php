@@ -1135,6 +1135,12 @@ class Connection
      */
     public function disconnect(string $reason): void
     {
+        foreach ($this->activeChannels as $channel) {
+            if ($channel->commandIsRunning()) {
+                $channel->stopCommand();
+            }
+        }
+
         $this->writePacked(
             MessageType::DISCONNECT,
             [DisconnectReason::DISCONNECT_BY_APPLICATION->value, $reason, 'en']
@@ -1279,7 +1285,7 @@ class Connection
         }
 
         $success = $channel->startCommand($command);
-        $this->info("Started command: {$command} with result " . var_export($success, true));
+        $this->info("Started command: {$command} with result ".var_export($success, true));
 
         if (! $success) {
             $this->error("Failed to start command: {$command}");

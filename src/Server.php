@@ -24,14 +24,19 @@ class Server
     private bool $isRunning = false;
 
     private bool $signalHandlersSetup = false;
+
     private bool $restarting = false;
 
     private array $childProcesses = [];
 
     private ServerHostKey $hostKey;
+
     private int $memoryUsage = 0;
+
     private int $peakMemoryUsage = 0;
+
     public int $memoryLogInterval = 180;
+
     private \DateTime $lastMemoryLog;
 
     public function __construct(

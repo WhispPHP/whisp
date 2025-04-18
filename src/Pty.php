@@ -168,6 +168,7 @@ class Pty
         }
 
         $resp = fread($this->master, $length) ?: '';
+
         return $resp;
     }
 

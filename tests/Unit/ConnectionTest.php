@@ -9,7 +9,7 @@ test('connection disconnects after inactivity timeout', function () {
     // Create a socket pair for testing
     $pair = [];
     if (socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair) === false) {
-        throw new \RuntimeException('Failed to create socket pair: ' . socket_strerror(socket_last_error()));
+        throw new \RuntimeException('Failed to create socket pair: '.socket_strerror(socket_last_error()));
     }
     [$clientSocket, $serverSocket] = $pair;
 

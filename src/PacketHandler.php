@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Whisp;
 
 use phpseclib3\Crypt\AES;
-use Psr\Log\LoggerInterface;
 use Socket;
 use Whisp\Concerns\WritesLogs;
 use Whisp\Enums\MessageType;

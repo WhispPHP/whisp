@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Whisp;
 
-use Whisp\Command\PtyCommandRunner;
 use Whisp\Command\CommandRunner;
+use Whisp\Command\PtyCommandRunner;
 use Whisp\Concerns\WritesLogs;
 use Whisp\Loggers\NullLogger;
 use Whisp\Values\TerminalInfo;
@@ -25,7 +25,9 @@ class Channel
     private bool $outputClosed = false;
 
     private ?int $childPid = null;
+
     private array $pendingEnv = [];
+
     private ?CommandRunner $commandRunner = null;
 
     public function __construct(
@@ -247,7 +249,7 @@ class Channel
      */
     public function stopCommand(): void
     {
-        if (!is_null($this->commandRunner)) {
+        if (! is_null($this->commandRunner)) {
             $this->commandRunner->stop();
         }
 
