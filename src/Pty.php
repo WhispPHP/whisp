@@ -514,7 +514,9 @@ class Pty
         if ($this->process && is_resource($this->process)) {
             $this->debug('Stopping command with pid '.$this->childPid);
             proc_terminate($this->process, SIGTERM);
-            proc_close($this->process);
+            if (is_resource($this->process)) {
+                proc_close($this->process);
+            }
         }
 
         $this->commandRunning = false;
