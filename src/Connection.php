@@ -1071,9 +1071,6 @@ class Connection
 
         $channel = $this->activeChannels[$channelId];
         $channel->markInputClosed();
-
-        // Send EOF back to the client
-        $this->writePacked(MessageType::CHANNEL_EOF, $channelId);
     }
 
     public function handleChannelClose(Packet $packet)
@@ -1159,6 +1156,18 @@ class Connection
     private function closeChannel(Channel $channel)
     {
         $this->debug('Closing channel #'.$channel->recipientChannel);
+
+        // Send any pending data to the client
+        // How do we do stream_select to see if there's any data left to send?
+        $read = [$channel->getCommandStdout()];
+        $write = [];
+        $except = [];
+        $result = stream_select($read, $write, $except, 0);
+        if ($result !== false && !empty($read)) {
+            $channel->forwardFromCommand();
+        }
+
+        // Send the close message to the client
         $this->writePacked(MessageType::CHANNEL_CLOSE, $channel->recipientChannel);
 
         $channel->close();

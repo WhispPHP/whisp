@@ -182,6 +182,7 @@ class Channel
                 // Send the exit status to the client
                 if ($this->connection) {
                     $this->connection->sendExitStatus($this, $exitCode); // TODO: This should be in Channel, not Connection. Weird back and forth of responsibilities in Connection and Channel!
+                    $this->markOutputClosed();
                 }
 
                 $this->childPid = null;
