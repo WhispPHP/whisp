@@ -24,6 +24,11 @@
 |
 */
 
+function inGithubActions(): bool
+{
+    return !empty(getenv('GITHUB_ACTIONS'));
+}
+
 function pidRunning(int $pid): bool
 {
     $running = posix_kill($pid, 0);
