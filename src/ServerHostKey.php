@@ -16,7 +16,7 @@ class ServerHostKey
     public function __construct(private ?string $name = 'whisp', private ?string $baseDir = null)
     {
         // We add the name so we can have multiple servers on the same machine
-        $baseDir = $this->baseDir ?? getenv('HOME').'/.whisp-'.$this->name.'/';
+        $baseDir = $this->baseDir ?? $this->getHomeDir().'/.whisp-'.$this->name.'/';
         if (! is_dir($baseDir)) {
             $created = mkdir($baseDir, 0700, true);
             if (! $created) {
@@ -50,6 +50,16 @@ class ServerHostKey
                 throw new \RuntimeException('Failed to write server\'s SSH host keypair in '.$baseDir);
             }
         }
+    }
+
+    private function getHomeDir(): string
+    {
+        $home = getenv('HOME') ?? '';
+        if (empty($home) && function_exists('posix_getpwuid')) {
+            $home = posix_getpwuid(posix_getuid())['dir'];
+        }
+
+        return $home;
     }
 
     public function getPrivateKey(): string
