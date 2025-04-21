@@ -74,12 +74,12 @@ class Connection
      */
     public function __construct(Socket $socket)
     {
-        $this->connectedAt = new \DateTimeImmutable;
-        $this->lastActivity = new \DateTimeImmutable;
+        $this->connectedAt = new \DateTimeImmutable();
+        $this->lastActivity = new \DateTimeImmutable();
         $this->socket = $socket;
-        $this->publicKeyValidator = new PublicKeyValidator(new \Whisp\Loggers\NullLogger);
+        $this->publicKeyValidator = new PublicKeyValidator(new \Whisp\Loggers\NullLogger());
         $this->packetHandler(new PacketHandler($socket));
-        $this->logger(new \Whisp\Loggers\NullLogger);
+        $this->logger(new \Whisp\Loggers\NullLogger());
         $this->createStream($socket);
     }
 
@@ -195,7 +195,7 @@ class Connection
             $this->handleStreamData($read);
             $this->cleanupClosedChannels();
 
-            $diff = $this->lastActivity->diff(new \DateTimeImmutable);
+            $diff = $this->lastActivity->diff(new \DateTimeImmutable());
             $inactiveSeconds = ($diff->i * 60) + $diff->s;
             if ($inactiveSeconds > $this->disconnectInactivitySeconds) {
                 $this->info("Connection inactive for {$inactiveSeconds} seconds, disconnecting");
@@ -311,7 +311,7 @@ class Connection
             $this->disconnect('Connection closed');
         } else {
             $this->handleData($data);
-            $this->lastActivity = new \DateTimeImmutable;
+            $this->lastActivity = new \DateTimeImmutable();
         }
     }
 
@@ -327,7 +327,7 @@ class Connection
                 if ($stream === $channel->getCommandStdout()) {
                     $bytesWritten = $channel->forwardFromCommand();
                     if ($bytesWritten > 0) { // We got data, so we're active
-                        $this->lastActivity = new \DateTimeImmutable;
+                        $this->lastActivity = new \DateTimeImmutable();
                     }
                     break;
                 }
@@ -766,7 +766,12 @@ class Connection
             } else {
                 // Client is checking if the key is acceptable (no signature provided yet)
                 $this->info("Public key provided without signature, sending PK_OK for user: {$username}");
-                $this->writePacked(MessageType::USERAUTH_PK_OK, [$keyAlgorithmName, $publicKeyBlob]);
+                if (in_array($keyAlgorithmName, $this->kexNegotiator->acceptedUserKeyAlgorithms)) {
+                    $this->writePacked(MessageType::USERAUTH_PK_OK, [$keyAlgorithmName, $publicKeyBlob]);
+                } else {
+                    $this->warning("Public key algorithm {$keyAlgorithmName} not supported");
+                    $this->writePacked(MessageType::USERAUTH_FAILURE, [['publickey', 'none'], false]);
+                }
 
                 return;
             }
