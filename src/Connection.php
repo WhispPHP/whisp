@@ -672,11 +672,12 @@ class Connection
     public function handleUserAuthRequest(Packet $packet)
     {
         [$username, $service, $method] = $packet->extractFormat('%s%s%s');
-        try {
-            $this->resolveApp($username);
+        
+        // Check if username exactly matches an app (not just resolves to default)
+        if ($this->isExactAppMatch($username)) {
             $this->requestedApp = $username;
             $this->info("Auth: Username '$username' matched an app, setting requestedApp to '$username'");
-        } catch (\InvalidArgumentException $e) {
+        } else {
             $this->username = $username;
             $this->info("Auth: Username '$username' is not a valid app, storing as username");
         }
@@ -1218,6 +1219,30 @@ class Connection
     /**
      * @return array{string, array<string, string>}
      */
+    /**
+     * Check if an app name exactly matches a registered app (including parameterized apps)
+     * This does NOT fall back to default app like resolveApp does
+     */
+    private function isExactAppMatch(string $app): bool
+    {
+        foreach ($this->apps as $baseApp => $command) {
+            if ($baseApp === $app) {
+                return true;
+            }
+
+            // Convert route pattern to regex to check parameterized apps
+            // cursor-party-{room} -> cursor-party-(?<room>[^/]+)
+            $pattern = preg_replace('/\{([^}]+)\}/', '(?<$1>[^/]+)', $baseApp);
+            $pattern = '/^'.str_replace('/', '\/', $pattern).'$/';
+
+            if (preg_match($pattern, $app)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function resolveApp(string $app): array
     {
         $resolved = null;
