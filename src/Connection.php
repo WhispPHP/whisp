@@ -160,6 +160,7 @@ class Connection
     public function handle(): void
     {
         $this->info(sprintf('Handling connection #%d with %d apps: %s', $this->connectionId, count($this->apps), array_key_exists('default', $this->apps) ? 'default' : 'no default'));
+        $this->info('Available apps: ' . implode(', ', array_keys($this->apps)));
         $selectTimeoutInMs = 20;
 
         // Main event loop for this connection
@@ -674,8 +675,10 @@ class Connection
         try {
             $this->resolveApp($username);
             $this->requestedApp = $username;
+            $this->info("Auth: Username '$username' matched an app, setting requestedApp to '$username'");
         } catch (\InvalidArgumentException $e) {
             $this->username = $username;
+            $this->info("Auth: Username '$username' is not a valid app, storing as username");
         }
 
         $this->info("Auth request: user=$username, service=$service, method=$method");
@@ -847,17 +850,29 @@ class Connection
 
             case 'exec':
                 // Exec is used to run a command on the server, usually you'd do `ssh server 'tail -f log.log'` say, but of course we only support our registered apps here
-                // We also support 2 ways of setting the app: username & exec
-                // Because some terminals (Warp) try to run a giant script here to setup cool things, we need to have 'username' routing take priority over 'exec', so if we already have a non-default requestedApp, we'll use that, _otherwise_ we'll try to use this
-
-                if ($this->requestedApp !== 'default') {
-                    // We already have a great non-default app so we'll use that
-                    $app = $this->requestedApp;
-                    $this->info("Received exec request, ignoring and using username app: {$app}");
-                } else {
-                    [$this->requestedApp] = $packet->extractFormat('%s');
-                    $this->info("Received exec request with app: {$this->requestedApp}");
+                // We support 2 ways of setting the app: username & exec
+                // Priority: If exec command is a valid app, use it. Otherwise, fall back to username app, then default.
+                
+                [$execCommand] = $packet->extractFormat('%s');
+                $this->info("Received exec request with command: {$execCommand}");
+                $this->info("Current requestedApp before exec processing: {$this->requestedApp}");
+                
+                // Check if the exec command is a valid app (higher priority)
+                try {
+                    $this->resolveApp($execCommand);
+                    $this->requestedApp = $execCommand;
+                    $this->info("Using exec command as app: {$execCommand}");
+                } catch (\InvalidArgumentException $e) {
+                    // Exec command is not a valid app, check if we have a username-based app
+                    if ($this->requestedApp !== 'default') {
+                        $this->info("Exec command '{$execCommand}' is not a valid app, using username app: {$this->requestedApp}");
+                    } else {
+                        // Neither exec nor username matched, will fall back to default
+                        $this->info("Exec command '{$execCommand}' is not a valid app, falling back to default");
+                    }
                 }
+                
+                $this->info("Final requestedApp after exec processing: {$this->requestedApp}");
 
                 // Start the command interactively
                 $started = $this->startCommand($channel, $this->requestedApp);
@@ -868,6 +883,7 @@ class Connection
 
             case 'shell':
                 // For shell requests, start the current requestedApp (which defaults to 'default' but can be overriden by the username)
+                $this->info("Shell request - using requestedApp: {$this->requestedApp}");
                 $started = $this->startCommand($channel, $this->requestedApp);
                 if ($wantReply) {
                     $this->write($started ? $channelSuccessReply : $channelFailureReply);
