@@ -310,6 +310,9 @@ class Pty
 
         $termios->c_iflag |= $this->ffi->getConstant('ICRNL');
 
+        // Disable OPOST in output flags to prevent post-processing
+        $termios->c_oflag &= ~$this->ffi->getConstant('OPOST');
+
         // Apply SSH client's terminal modes
         foreach ($modes as $opcode => $value) {
             try {
@@ -386,7 +389,7 @@ class Pty
                     TerminalMode::PENDIN->value => $this->setFlag($termios->c_lflag, $this->ffi->getConstant('PENDIN'), $value),
 
                     // Handle output flags
-                    TerminalMode::OPOST->value => $this->setFlag($termios->c_oflag, $this->ffi->getConstant('OPOST'), $value),
+                    // OPOST is always disabled - do not allow client to enable it
                     TerminalMode::OLCUC->value => $this->setFlag($termios->c_oflag, $this->ffi->getConstant('OLCUC'), $value),
                     TerminalMode::ONLCR->value => $this->setFlag($termios->c_oflag, $this->ffi->getConstant('ONLCR'), $value),
                     TerminalMode::OCRNL->value => $this->setFlag($termios->c_oflag, $this->ffi->getConstant('OCRNL'), $value),
