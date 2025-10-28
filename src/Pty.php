@@ -310,10 +310,10 @@ class Pty
 
         $termios->c_iflag |= $this->ffi->getConstant('ICRNL');
 
-        // Disable OPOST in output flags to prevent post-processing
-        $termios->c_oflag &= ~$this->ffi->getConstant('OPOST');
-        // Also disable ONLCR to prevent NL -> CRNL conversion
-        $termios->c_oflag &= ~$this->ffi->getConstant('ONLCR');
+        // Enable OPOST in output flags for normal text processing
+        $termios->c_oflag |= $this->ffi->getConstant('OPOST');
+        // Enable ONLCR to convert NL -> CRNL (proper line breaks)
+        $termios->c_oflag |= $this->ffi->getConstant('ONLCR');
 
         // Apply SSH client's terminal modes
         foreach ($modes as $opcode => $value) {
@@ -391,9 +391,8 @@ class Pty
                     TerminalMode::PENDIN->value => $this->setFlag($termios->c_lflag, $this->ffi->getConstant('PENDIN'), $value),
 
                     // Handle output flags
-                    // OPOST and ONLCR are always disabled - do not allow client to enable them
-                    TerminalMode::OPOST->value => null, // Explicitly ignore - OPOST stays disabled
-                    TerminalMode::ONLCR->value => null, // Explicitly ignore - ONLCR stays disabled (prevents NL->CRNL)
+                    TerminalMode::OPOST->value => $this->setFlag($termios->c_oflag, $this->ffi->getConstant('OPOST'), $value),
+                    TerminalMode::ONLCR->value => $this->setFlag($termios->c_oflag, $this->ffi->getConstant('ONLCR'), $value),
                     TerminalMode::OLCUC->value => $this->setFlag($termios->c_oflag, $this->ffi->getConstant('OLCUC'), $value),
                     TerminalMode::OCRNL->value => $this->setFlag($termios->c_oflag, $this->ffi->getConstant('OCRNL'), $value),
                     TerminalMode::ONOCR->value => $this->setFlag($termios->c_oflag, $this->ffi->getConstant('ONOCR'), $value),
@@ -411,19 +410,14 @@ class Pty
             }
         }
 
-        // Force disable OPOST and ONLCR one final time before applying settings
-        // to ensure they stay disabled regardless of client modes
-        $termios->c_oflag &= ~$this->ffi->getConstant('OPOST');
-        $termios->c_oflag &= ~$this->ffi->getConstant('ONLCR');
-
         // Apply the modified terminal settings to the slave
         $this->ffi->setTermios($fd, $termios);
 
-        // Also apply raw output mode to the master to prevent any output processing there
+        // Apply same output settings to master for consistency
         try {
             $masterTermios = $this->ffi->getTermios($this->masterFd);
-            $masterTermios->c_oflag &= ~$this->ffi->getConstant('OPOST');
-            $masterTermios->c_oflag &= ~$this->ffi->getConstant('ONLCR');
+            $masterTermios->c_oflag |= $this->ffi->getConstant('OPOST');
+            $masterTermios->c_oflag |= $this->ffi->getConstant('ONLCR');
             $this->ffi->setTermios($this->masterFd, $masterTermios);
         } catch (\Exception $e) {
             // Master might not support termios, that's ok
