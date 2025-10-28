@@ -83,9 +83,37 @@ class Ffi
                 'ECHONL' => 0x00000010,
                 'ISIG' => 0x00000080,
                 'IEXTEN' => 0x00000400,
+                'ECHOCTL' => 0x00000040,
+                'ECHOKE' => 0x00000001,
+                'PENDIN' => 0x20000000,
+                'NOFLSH' => 0x80000000,
+                'TOSTOP' => 0x00400000,
 
                 // Input mode flags (c_iflag)
                 'ICRNL' => 0x00000100,  // Convert CR to NL on input
+                'IGNPAR' => 0x00000004,
+                'PARMRK' => 0x00000008,
+                'INPCK' => 0x00000010,
+                'ISTRIP' => 0x00000020,
+                'INLCR' => 0x00000040,
+                'IGNCR' => 0x00000080,
+                'IXON' => 0x00000200,
+                'IXANY' => 0x00000800,
+                'IXOFF' => 0x00000400,
+                'IMAXBEL' => 0x00002000,
+
+                // Output flags (c_oflag)
+                'OPOST' => 0x00000001,   // Enable output processing
+                'ONLCR' => 0x00000002,   // Map NL to CR-NL on output
+                'OCRNL' => 0x00000010,   // Map CR to NL on output
+                'ONOCR' => 0x00000020,   // Don't output CR at column 0
+                'ONLRET' => 0x00000040,  // NL performs CR function
+
+                // Control flags (c_cflag)
+                'PARENB' => 0x00001000,
+                'PARODD' => 0x00002000,
+                'CS7' => 0x00000200,
+                'CS8' => 0x00000300,
 
                 // File flags
                 'O_RDWR' => 0x0002,
