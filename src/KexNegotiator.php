@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Whisp;
 
+use Whisp\Crypto\MlKem768OpenSsl;
 use Whisp\Enums\MessageType;
 
 class KexNegotiator
@@ -12,10 +13,9 @@ class KexNegotiator
 
     public ?string $serverKexInit = null;
 
-    private array $kexAlgorithms = [
-        'curve25519-sha256',  // Most modern and recommended
-        // 'ecdh-sha2-nistp256',  // Widely supported backup
-    ];
+    public string $selectedKexAlgorithm = Kex::KEX_CURVE25519_SHA256;
+
+    private array $kexAlgorithms;
 
     private array $serverHostKeyAlgorithms = [
         'ssh-ed25519',        // Modern, secure, and efficient
@@ -49,11 +49,13 @@ class KexNegotiator
         public string $clientVersion,
         public string $serverVersion,
     ) {
+        $this->kexAlgorithms = $this->availableKexAlgorithms();
     }
 
     public function response(): string
     {
         $this->clientKexInit = chr($this->packet->type->value).$this->packet->message;
+        $this->selectedKexAlgorithm = $this->negotiateKexAlgorithm();
 
         // Build our algorithms lists
         $kexAlgorithms = implode(',', $this->kexAlgorithms);
@@ -92,5 +94,56 @@ class KexNegotiator
     private function packString(string $str): string
     {
         return pack('N', strlen($str)).$str;
+    }
+
+    private function availableKexAlgorithms(): array
+    {
+        $algorithms = [];
+
+        if (MlKem768OpenSsl::isAvailable()) {
+            $algorithms[] = Kex::KEX_MLKEM768X25519_SHA256;
+        }
+
+        $algorithms[] = Kex::KEX_CURVE25519_SHA256;
+
+        return $algorithms;
+    }
+
+    private function negotiateKexAlgorithm(): string
+    {
+        foreach ($this->clientKexAlgorithms() as $algorithm) {
+            if (in_array($algorithm, $this->kexAlgorithms, true)) {
+                return $algorithm;
+            }
+        }
+
+        return Kex::KEX_CURVE25519_SHA256;
+    }
+
+    private function clientKexAlgorithms(): array
+    {
+        $offset = 16; // SSH_MSG_KEXINIT cookie
+        $nameList = $this->readString($this->packet->message, $offset);
+
+        return $nameList === '' ? [] : explode(',', $nameList);
+    }
+
+    private function readString(string $payload, int &$offset): string
+    {
+        if (strlen($payload) < $offset + 4) {
+            return '';
+        }
+
+        $length = unpack('N', substr($payload, $offset, 4))[1];
+        $offset += 4;
+
+        if (strlen($payload) < $offset + $length) {
+            return '';
+        }
+
+        $value = substr($payload, $offset, $length);
+        $offset += $length;
+
+        return $value;
     }
 }

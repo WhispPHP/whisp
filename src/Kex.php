@@ -5,11 +5,17 @@ declare(strict_types=1);
 namespace Whisp;
 
 use Psr\Log\LoggerInterface;
+use RuntimeException;
+use Whisp\Crypto\MlKem768OpenSsl;
 use Whisp\Enums\MessageType;
 use Whisp\Loggers\NullLogger;
 
 class Kex
 {
+    public const KEX_CURVE25519_SHA256 = 'curve25519-sha256';
+
+    public const KEX_MLKEM768X25519_SHA256 = 'mlkem768x25519-sha256';
+
     public string $serverKexInit;
 
     public string $sharedSecret;
@@ -17,6 +23,8 @@ class Kex
     public ?string $sessionId = null;
 
     public string $exchangeHash;
+
+    public bool $sharedSecretIsString = false;
 
     private ?LoggerInterface $logger;
 
@@ -37,6 +45,21 @@ class Kex
      * Diffie Hellman key exchange response
      */
     public function response(): string
+    {
+        return match ($this->kexNegotiator->selectedKexAlgorithm) {
+            self::KEX_MLKEM768X25519_SHA256 => $this->mlKem768X25519Response(),
+            default => $this->curve25519Response(),
+        };
+    }
+
+    public function encodedSharedSecret(): string
+    {
+        return $this->sharedSecretIsString
+            ? $this->packString($this->sharedSecret)
+            : $this->packMpint($this->sharedSecret);
+    }
+
+    private function curve25519Response(): string
     {
         // Extract client's public key (32 bytes after 4-byte length)
         $clientPublicKeyLength = unpack('N', substr($this->packet->message, 0, 4))[1];
@@ -90,6 +113,72 @@ class Kex
             $this->packString($hostKeyBlob).       // Host key blob (includes identifier)
             $this->packString($curve25519Public).  // Server's ephemeral public key
             $this->packString($signatureBlob);      // Signature blob (includes identifier)
+
+        $this->exchangeHash = $exchangeHash;
+
+        return $kexReplyPayload;
+    }
+
+    private function mlKem768X25519Response(): string
+    {
+        $clientBlobLength = unpack('N', substr($this->packet->message, 0, 4))[1];
+        $clientBlob = substr($this->packet->message, 4, $clientBlobLength);
+
+        $expectedClientBlobLength = MlKem768OpenSsl::PUBLIC_KEY_BYTES + 32;
+        if ($clientBlobLength !== $expectedClientBlobLength || strlen($clientBlob) !== $expectedClientBlobLength) {
+            throw new RuntimeException('Invalid mlkem768x25519-sha256 client key exchange payload.');
+        }
+
+        $clientMlKemPublicKey = substr($clientBlob, 0, MlKem768OpenSsl::PUBLIC_KEY_BYTES);
+        $clientCurve25519PublicKey = substr($clientBlob, MlKem768OpenSsl::PUBLIC_KEY_BYTES, 32);
+
+        $mlKem = MlKem768OpenSsl::create();
+        $encapsulation = $mlKem->encapsulate($clientMlKemPublicKey);
+
+        $curveKeyPair = sodium_crypto_box_keypair();
+        $curve25519Private = sodium_crypto_box_secretkey($curveKeyPair);
+        $curve25519Public = sodium_crypto_box_publickey($curveKeyPair);
+        $curve25519SharedSecret = sodium_crypto_scalarmult($curve25519Private, $clientCurve25519PublicKey);
+
+        $serverBlob = $encapsulation['ciphertext'].$curve25519Public;
+        $this->sharedSecret = hash('sha256', $encapsulation['sharedSecret'].$curve25519SharedSecret, true);
+        $this->sharedSecretIsString = true;
+
+        $ed25519Private = $this->serverHostKey->getPrivateKey();
+        $ed25519Public = $this->serverHostKey->getPublicKey();
+        $hostKeyBlob = $this->packString('ssh-ed25519').$this->packString($ed25519Public);
+
+        $exchangeHash = hash('sha256', implode('', [
+            $this->packString($this->kexNegotiator->clientVersion),
+            $this->packString($this->kexNegotiator->serverVersion),
+            $this->packString($this->kexNegotiator->clientKexInit),
+            $this->packString($this->kexNegotiator->serverKexInit),
+            $this->packString($hostKeyBlob),
+            $this->packString($clientBlob),
+            $this->packString($serverBlob),
+            $this->packString($this->sharedSecret),
+        ]), true);
+
+        if (is_null($this->sessionId)) {
+            $this->sessionId = $exchangeHash;
+        }
+
+        $signature = sodium_crypto_sign_detached($exchangeHash, $ed25519Private);
+        $signatureBlob = $this->packString('ssh-ed25519').$this->packString($signature);
+
+        $this->logger->debug('Hybrid key exchange details:'.print_r([
+            'algorithm' => self::KEX_MLKEM768X25519_SHA256,
+            'host_key_blob_len' => strlen($hostKeyBlob),
+            'client_blob_len' => strlen($clientBlob),
+            'server_blob_len' => strlen($serverBlob),
+            'exchange_hash' => bin2hex($exchangeHash),
+        ], true));
+
+        $kexReplyPayload =
+            MessageType::chr(MessageType::KEXDH_REPLY).
+            $this->packString($hostKeyBlob).
+            $this->packString($serverBlob).
+            $this->packString($signatureBlob);
 
         $this->exchangeHash = $exchangeHash;
 

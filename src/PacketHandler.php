@@ -82,8 +82,7 @@ class PacketHandler
             $this->rekeyKex = $kex;
         }
 
-        // Pack shared secret as MPInt (confirm no extra leading zeros)
-        $K = $this->packMpint($kex->sharedSecret);
+        $K = $kex->encodedSharedSecret();
         $H = $kex->exchangeHash;
 
         // Modified KDF to support extended hashing if needed
