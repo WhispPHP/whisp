@@ -6,13 +6,6 @@
 
 ![](terminal-example.gif)
 
-> [!NOTE]
-> Quick example: **sign our guestbook** ([See the code](https://github.com/WhispPHP/whisp.fyi/tree/main/apps))
-> ```bash
-> ssh guestbook@whisp.fyi
-> ```
-> Got a one-time secret to share? `ssh secrets@whisp.fyi`
-
 Explore the full docs at **[WhispPHP.com »](https://whispphp.com)**
 
 # Installation
@@ -97,28 +90,14 @@ There are two ways for clients to request an available app:
 
 Explore the full docs at **[WhispPHP.com »](https://whispphp.com)**, which also show how to setup Whisp to listen on port 22, start on boot, and restart on failure with systemd.
 
-# Live Examples
+# Example Apps
 
-**Play the Dinorun game** ∙ [See the code](https://github.com/WhispPHP/whisp.fyi/blob/main/apps/dinorun.php)
-```bash
-ssh dinorun@whisp.fyi
-```
+Browse the [example app source](https://github.com/WhispPHP/whisp.fyi/tree/main/apps) and run it on your own Whisp server:
 
-**Share one-time secrets**
-Fully encrypted, and fully secure. Only the person with the valid private SSH key can access them.
-```bash
-ssh secrets@whisp.fyi
-```
-
-**View your sunrise/sunset times** ∙ [See the code](https://github.com/WhispPHP/whisp.fyi/blob/main/apps/daylight.php)
-```bash
-ssh daylight@whisp.fyi
-```
-
-**Find your closest World Heritage Sites**
-```bash
-ssh elec@whisp.fyi
-```
+- [Dinorun](https://github.com/WhispPHP/whisp.fyi/blob/main/apps/dinorun.php)
+- [One-time secrets](https://github.com/WhispPHP/whisp.fyi/blob/main/apps/secrets.php)
+- [Sunrise and sunset times](https://github.com/WhispPHP/whisp.fyi/blob/main/apps/daylight.php)
+- [World Heritage Sites](https://github.com/WhispPHP/whisp.fyi/blob/main/apps/elec.php)
 
 ---
 
