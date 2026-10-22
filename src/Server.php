@@ -204,8 +204,7 @@ class Server
                 $this->forkNewConnection($clientSocket, $connectionId);
             }
 
-            $secondsSinceLastMemoryLog = $this->lastMemoryLog->diff(new \DateTime)->format('%s');
-            if ($secondsSinceLastMemoryLog > $this->memoryLogInterval) {
+            if ($this->isMemoryLogDue()) {
                 $this->logMemoryUsage();
             }
         }
@@ -365,6 +364,16 @@ class Server
     {
         $this->error($text);
         exit($exitCode);
+    }
+
+    /**
+     * Determine whether the configured interval has fully elapsed.
+     */
+    private function isMemoryLogDue(?\DateTimeImmutable $now = null): bool
+    {
+        $now ??= new \DateTimeImmutable;
+
+        return $now->getTimestamp() - $this->lastMemoryLog->getTimestamp() >= $this->memoryLogInterval;
     }
 
     private function logMemoryUsage(): void
