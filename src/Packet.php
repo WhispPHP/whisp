@@ -29,7 +29,15 @@ class Packet
      */
     public function extractString(string $data, int &$offset): array
     {
+        if (strlen($data) - $offset < 4) {
+            throw new \UnexpectedValueException('Incomplete SSH string length');
+        }
+
         $length = unpack('N', substr($data, $offset, 4))[1];
+        if ($length > strlen($data) - $offset - 4) {
+            throw new \UnexpectedValueException('Incomplete SSH string data');
+        }
+
         $string = substr($data, $offset + 4, $length);
         $offset += 4 + $length;
 
@@ -61,8 +69,13 @@ class Packet
         $specifiers = $matches[1] ?? [];
 
         foreach ($specifiers as $spec) {
-            if ($this->offset >= strlen($this->message)) {
-                return $values;
+            $remaining = strlen($this->message) - $this->offset;
+            if ($remaining === 0) {
+                throw new \UnexpectedValueException("Missing SSH field for %{$spec}");
+            }
+
+            if ($spec === 'u' && $remaining < 4) {
+                throw new \UnexpectedValueException('Incomplete SSH uint32 field');
             }
 
             match ($spec) {
