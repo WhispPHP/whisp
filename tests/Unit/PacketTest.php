@@ -82,3 +82,27 @@ test('handles all formats together at once', function () {
         ->and($int1)->toBe(420)
         ->and($bool)->toBeTrue();
 });
+
+test('rejects incomplete SSH fields', function (string $format, string $message) {
+    $packet = new Packet(chr(MessageType::CHANNEL_OPEN->value).$message);
+
+    expect(fn () => $packet->extractFormat($format))
+        ->toThrow(\UnexpectedValueException::class);
+})->with([
+    'missing uint32' => ['%u', ''],
+    'partial uint32' => ['%u', "\x00\x00\x01"],
+    'partial string length' => ['%s', "\x00\x00"],
+    'declared string exceeds available data' => ['%s', pack('N', 5).'abc'],
+    'partial uint32 after valid string' => ['%s%u', pack('N', 1).'a'."\x00\x01"],
+    'missing boolean after valid string' => ['%s%b', pack('N', 1).'a'],
+]);
+
+test('does not advance the offset for an incomplete SSH string', function () {
+    $packet = new Packet(chr(MessageType::CHANNEL_OPEN->value));
+    $offset = 0;
+
+    expect(fn () => $packet->extractString(pack('N', 5).'abc', $offset))
+        ->toThrow(\UnexpectedValueException::class);
+
+    expect($offset)->toBe(0);
+});
